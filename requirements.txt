@@ -1,0 +1,12 @@
+streamlit
+pandas
+numpy
+matplotlib
+requests
+beautifulsoup4
+selenium
+scipy
+yfinance
+webdriver-manager
+seaborn
+altair
