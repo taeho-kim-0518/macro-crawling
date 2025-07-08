@@ -22,14 +22,12 @@ import time
 import seaborn as sns
 
 # load_dotenv()
-
-
 # API_KEY = os.getenv("FRED_API_KEY")
 # EIA_API_KEY = os.getenv("EIA_API_KEY")
 
 # secrets.toml에서 API 키 불러오기
-API_KEY = st.secrets["FRED_API_KEY"]
-EIA_API_KEY = st.secrets["EIA_API_KEY"]
+API_KEY = st.secrets["FRED"]["API_KEY"]
+EIA_API_KEY = st.secrets["EIA"]["API_KEY"]
 
 
 @st.cache_resource
@@ -87,15 +85,25 @@ def get_2years_treasury_yeild():
         'observation_start' : '2000-01-01' # 시작일(원하는 날짜짜)
     }
 
-    response = requests.get(url, params= params)
-    data = response.json()
+    try:
+        response = requests.get(url, params= params, timeout=10)
+        response.raise_for_status() # HTTP 에러 발생 시 예외 처리
+        data = response.json()
 
-    # 데이터프레임 변환
-    df = pd.DataFrame(data['observations'])
-    df['date'] = pd.to_datetime(df['date'])
-    df['value'] = pd.to_numeric(df['value'], errors= 'coerce')
+        if 'observations' not in data:
+            raise ValueError(F"'observations' 키가 없음 : {data}") 
 
-    return df
+        # 데이터프레임 변환
+        df = pd.DataFrame(data['observations'])
+        df['date'] = pd.to_datetime(df['date'])
+        df['value'] = pd.to_numeric(df['value'], errors= 'coerce')
+
+        return df
+    
+    except Exception as e:
+        print(f"[ERROR] FRED API 호출 실패 : {e}")
+        return pd.DataFrame()
+    
 
 def get_cpi():
     url = 'https://api.stlouisfed.org/fred/series/observations'
