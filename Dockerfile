@@ -33,4 +33,4 @@ ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
 # 실행 명령어
-CMD ["streamlit", "run", "market_dashboard.py", "--server.port=8000", "--server.enableCORS=false"]
+CMD ["streamlit", "run", "market_dashboard.py", "--server.port=10000", "--server.enableCORS=false"]
