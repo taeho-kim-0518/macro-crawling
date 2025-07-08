@@ -290,7 +290,7 @@ def get_japan_policy_rate(api_key: str = API_KEY, start_date="2015-05-18"):
 
 # as-js
 # def get_bull_bear_spread():
-#     url = "https://ycharts.com/indicators/us_investor_sentiment_bull_bear_spread"
+#     url = ""
 
 #     options = Options()
 #     options.add_argument("--headless")
@@ -323,10 +323,14 @@ def get_bull_bear_spread():
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
 
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()),
-        options=options
-    )
+    # as-js
+    # driver = webdriver.Chrome(
+    #     service=Service(ChromeDriverManager().install()),
+    #     options=options
+    # )
+
+    driver = webdriver.Chrome(options=options)
+    # driver = webdriver.Chrome(service=Service())
 
     driver.get(url)
     time.sleep(5)  # JS 렌더링 대기
