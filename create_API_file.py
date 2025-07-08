@@ -116,15 +116,22 @@ def get_cpi():
     response = requests.get(url, params=params, timeout=10)
     try:
         data = response.json()
-    except ValueError:
-        print("⚠️ 응답을 JSON으로 변환할 수 없습니다.")
+    except Exception as e:
+        print("❌ JSON 디코딩 실패:", e)
+        print("응답 원문:", response.text)
         return pd.DataFrame()
 
     if 'observations' not in data:
-        print("❌ 'observations' 키가 없음. API 응답:", data)
+        print("❌ 'observations' 키 없음. 응답 내용:", data)
         return pd.DataFrame()
-    
+
+    if not data['observations']:
+        print("❌ observations 리스트 비어있음:", data)
+        return pd.DataFrame()
+
     df = pd.DataFrame(data['observations'])
+    print("✅ get_cpi 데이터 preview:", df.head())
+
     df['date'] = pd.to_datetime(df['date'])
     df['value'] = pd.to_numeric(df['value'], errors='coerce')
     return df
