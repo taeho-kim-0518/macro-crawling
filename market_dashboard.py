@@ -2,7 +2,9 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 
-# 배포 url : https://macro-dashboard001.streamlit.app/
+st.write("API KEY:", st.secrets["FRED"]["API_KEY"])
+
+# 배포 url : https://macro-dashboard002.streamlit.app/
 
 # 👉 data_collect.py에 있는 함수와 결과값 import
 from create_API_file import (

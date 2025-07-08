@@ -113,8 +113,17 @@ def get_cpi():
         'file_type': 'json',
         'observation_start': '2000-01-01'
     }
-    response = requests.get(url, params=params)
-    data = response.json()
+    response = requests.get(url, params=params, timeout=10)
+    try:
+        data = response.json()
+    except ValueError:
+        print("⚠️ 응답을 JSON으로 변환할 수 없습니다.")
+        return pd.DataFrame()
+
+    if 'observations' not in data:
+        print("❌ 'observations' 키가 없음. API 응답:", data)
+        return pd.DataFrame()
+    
     df = pd.DataFrame(data['observations'])
     df['date'] = pd.to_datetime(df['date'])
     df['value'] = pd.to_numeric(df['value'], errors='coerce')
