@@ -329,7 +329,7 @@ def get_bull_bear_spread():
     #     options=options
     # )
 
-    driver = webdriver.Chrome(options=options)
+    driver = webdriver.Chrome(service=Service(), options=options)
     # driver = webdriver.Chrome(service=Service())
 
     driver.get(url)
