@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 
-st.write("API KEY:", st.secrets["FRED"]["API_KEY"])
+# st.write("API KEY:", st.secrets["FRED"]["API_KEY"])
 
 # 배포 url : https://macro-dashboard002.streamlit.app/
 
@@ -89,6 +89,7 @@ st.code(analyze_real_rate_and_yield_spread())
 # -------- CPI --------
 st.header("📌 인플레이션 (CPI YoY)")
 df_cpi = get_cpi_yoy()
+st.write("✅ CPI YoY 데이터프레임", df_cpi.head())
 st.line_chart(df_cpi.set_index("date")["CPI YOY(%)"])
 
 # -------- M2 ---------
