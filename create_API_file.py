@@ -113,12 +113,14 @@ def get_cpi():
         'file_type': 'json',
         'observation_start': '2000-01-01'
     }
-    response = requests.get(url, params=params, timeout=10)
+    
     try:
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
         data = response.json()
     except Exception as e:
-        print("❌ JSON 디코딩 실패:", e)
-        print("응답 원문:", response.text)
+        print("❌ API 요청 또는 JSON 파싱 실패:", e)
+        print("📦 응답 내용:", response.text)
         return pd.DataFrame()
 
     if 'observations' not in data:
@@ -131,6 +133,10 @@ def get_cpi():
 
     df = pd.DataFrame(data['observations'])
     print("✅ get_cpi 데이터 preview:", df.head())
+
+    if 'date' not in df.columns:
+        print("❌ 'date' 컬럼이 존재하지 않음. df.columns:", df.columns)
+        return pd.DataFrame()
 
     df['date'] = pd.to_datetime(df['date'])
     df['value'] = pd.to_numeric(df['value'], errors='coerce')
