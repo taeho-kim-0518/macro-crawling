@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 
-# st.write("API KEY:", st.secrets["FRED"]["API_KEY"])
+st.write("API KEY:", st.secrets["FRED"]["API_KEY"])
 
 # 배포 url : https://macro-dashboard002.streamlit.app/
 
