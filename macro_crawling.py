@@ -158,10 +158,45 @@ class MacroCrawler:
         df['value'] = pd.to_numeric(df['value'], errors='coerce')
         return df
 
+    def get_margin_debt_data(self):
+        '''
+        마진 부채 데이터 가져오기(고점 판단)
+        '''
+
+        url = "https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics"
+
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+
+        except Exception as e:
+            print("❌ API 요청 또는 JSON 파싱 실패:", e)
+            print("📦 응답 내용:", response.text)
+            return pd.DataFrame()
+        
+        table = soup.select_one("table")  # 가장 첫 번째 테이블 선택
+        rows = table.find_all("tr")
+        
+        data = []
+        headers = [th.get_text(strip=True) for th in rows[0].find_all("th")]
+
+        for row in rows[1:]:
+            cols = [td.get_text(strip=True).replace(",", "") for td in row.find_all("td")]
+            if len(cols) == len(headers):
+                data.append(cols)
+
+        df = pd.DataFrame(data, columns=headers)
+        df['Month/Year'] = pd.to_datetime(df['Month/Year'], format='%b-%y')
+        for col in df.columns[1:]:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        return df
+
+
 
 if __name__ == "__main__":
     cralwer = MacroCrawler()
    
-    m2_df = cralwer.get_m2()
-    print("미국 m2 데이터")
-    print(m2_df.tail())
+    margin_debt_df = cralwer.get_margin_debt_data()
+    print("미국 마진 부채 데이터")
+    print(margin_debt_df)
