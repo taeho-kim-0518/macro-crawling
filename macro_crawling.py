@@ -247,36 +247,16 @@ class MacroCrawler:
         '''
         마진 부채의 전년 대비 YOY (%) 변화율 계산
         '''
-        df = self.get_margin_debt_data()
+        df = self.update_margin_debt_data()
         if df.empty:
             return pd.DataFrame()
 
         df = df.sort_values("Month/Year")
         df["margin_debt"] = df["Debit Balances in Customers' Securities Margin Accounts"]
+        df["margin_debt"] = df["margin_debt"].str.replace(',','').astype(int)
         df["Margin YoY (%)"] = df["margin_debt"].pct_change(periods=12) * 100
         return df[["Month/Year", "margin_debt", "Margin YoY (%)"]]
 
-    def warn_margin_debt(self, threshold: float = 30.0):
-        '''
-        전년 대비 YOY 상승률이 기준(threshold)을 넘는 경우 과열 경고 반환
-        '''
-        df = self.get_margin_yoy_change()
-        if df.empty or df["Margin YoY (%)"].isna().all():
-            print("⚠️ YOY 데이터를 계산할 수 없습니다.")
-            return None
-
-        latest = df.dropna(subset=["Margin YoY (%)"]).iloc[-1]
-        yoy = latest["Margin YoY (%)"]
-        date = latest["Month/Year"].strftime("%Y-%m")
-
-        print(f"📅 최신 데이터: {date} | Margin YoY: {yoy:.2f}%")
-
-        if yoy > threshold:
-            print(f"🚨 경고: 마진 부채가 전년 대비 {yoy:.2f}% 증가 — 과열 가능성 있음!")
-            return True
-        else:
-            print("✅ 안정: 마진 부채 YOY 증가율이 기준 이하입니다.")
-            return False
         
     def get_sp500(self):
         '''
@@ -308,8 +288,10 @@ class MacroCrawler:
         df_m2['date'] = df_m2['date'].dt.to_period('M').dt.to_timestamp()
         df_m2 = df_m2.rename(columns={'value' : 'm2'})
 
-        df_margin = self.get_margin_yoy_change().copy()
+        df_margin = self.update_margin_debt_data().copy()
         df_margin['date'] = df_margin['Month/Year'].dt.to_period('M').dt.to_timestamp()
+        df_margin["margin_debt"] = df_margin["Debit Balances in Customers' Securities Margin Accounts"]
+        df_margin["margin_debt"] = df_margin["margin_debt"].str.replace(',','').astype(int)
 
         df_sp500 = self.get_sp500().copy()
         df_sp500['date'] = pd.to_datetime(df_sp500['date'])  # 혹시 모르니 안전하게
@@ -364,114 +346,12 @@ class MacroCrawler:
         plt.show()
 
 
-    def find_margin_peak_corrections(slef, df, drop_threshold=0.05, lookahead_months=3, peak_window=3):
-        """
-        margin_debt가 전고점 돌파 후 하락할 때, 
-        그 이후 6개월 내 S&P500이 5% 이상 하락했는지 확인.
-        
-        Parameters:
-            df (pd.DataFrame): 'date', 'margin_debt', 'sp500_close' 컬럼 포함된 DataFrame
-            drop_threshold (float): S&P 500 하락 기준 (기본 5%)
-            lookahead_months (int): 하락 감지할 기간 (기본 6개월)
-        
-        Returns:
-            pd.DataFrame: margin_debt 꺾임 시점과 S&P500 조정 정보
-        """
-        df = df.copy().sort_values('date').reset_index(drop=True)
-    
-        result = []
-        for i in range(peak_window, len(df) - lookahead_months):
-            recent_peak = df.loc[i - peak_window:i, 'margin_debt'].max()
-            current_margin = df.loc[i, 'margin_debt']
-            
-            # 고점 대비 하락 시작
-            if current_margin < recent_peak:
-                start_date = df.loc[i, 'date']
-                start_sp500 = df.loc[i, 'sp500_close']
-                
-                future_window = df.loc[i:i + lookahead_months]
-                min_sp500 = future_window['sp500_close'].min()
-                drawdown = (start_sp500 - min_sp500) / start_sp500 * 100
-
-                if drawdown >= drop_threshold * 100:
-                    result.append({
-                        'margin_drop_date': start_date,
-                        'initial_sp500': start_sp500,
-                        'min_sp500': min_sp500,
-                        'drawdown(%)': round(drawdown, 2)
-                    })
-        
-        return pd.DataFrame(result)
-    
-    def find_margin_bottom_entries(self, df, decline_months=3, rebound_threshold=0.03):
-        """
-        margin_debt가 일정 기간 하락 후 의미 있는 반등(기본 +3%)이 나오는 시점 찾기 (매수 후보)
-        
-        Parameters:
-            df (pd.DataFrame): 'date', 'margin_debt', 'sp500_close' 포함된 병합 데이터프레임
-            decline_months (int): 몇 개월 연속 하락을 봐야 하는지
-            rebound_threshold (float): 반등률 기준 (기본 3%)
-        
-        Returns:
-            pd.DataFrame: 매수 후보 시점 리스트
-        """
-        df = df.copy().sort_values('date').reset_index(drop=True)
-        entries = []
-
-        for i in range(decline_months, len(df) - 1):
-            # 1. 이전 decline_months 기간 동안 지속 하락했는지
-            decline = all(df.loc[j, 'margin_debt'] > df.loc[j + 1, 'margin_debt'] 
-                        for j in range(i - decline_months, i))
-
-            # 2. 이번 달에 지난 달에 비해 의미 있는 반등이 있었는지
-            if decline:
-                prev = df.loc[i-1, 'margin_debt']
-                curr = df.loc[i, 'margin_debt']
-                rebound_rate = (curr - prev) / prev
-
-                if rebound_rate >= rebound_threshold:
-                    entry_date = df.loc[i, 'date']  # 이번 달을 매수 시점으로 간주
-                    sp500_at_entry = df.loc[i, 'sp500_close']
-
-                    entries.append({
-                        'entry_date': entry_date,
-                        'sp500_at_entry': sp500_at_entry,
-                        'rebound_rate(%)': round(rebound_rate * 100, 2)
-                    })
-
-        return pd.DataFrame(entries)
-
-    
-    # def find_margin_bottom_entries(self, df, decline_months=3):
-        # """
-        # margin_debt가 일정 기간 하락 후 반등하는 시점 찾기 (매수 후보)
-        # df : m2, margin_debt, snp 병합 데이터
-        # """
-        # df = df.copy().sort_values('date').reset_index(drop=True)
-        # entries = []
-
-        # for i in range(decline_months, len(df) - 1):
-        #     # 직전 n개월 동안 margin_debt가 계속 하락했는지 확인
-        #     decline = all(df.loc[j, 'margin_debt'] > df.loc[j + 1, 'margin_debt'] 
-        #                 for j in range(i - decline_months, i))
-            
-        #     # 현재 달에서 다음 달에 margin_debt가 반등했는지 확인
-        #     rebound = df.loc[i, 'margin_debt'] < df.loc[i + 1, 'margin_debt']
-
-        #     if decline and rebound:
-        #         entry_date = df.loc[i + 1, 'date']
-        #         sp500_at_entry = df.loc[i + 1, 'sp500_close']
-        #         entries.append({
-        #             'entry_date': entry_date,
-        #             'sp500_at_entry': sp500_at_entry
-        #         })
-
-        # return pd.DataFrame(entries)
-
+  
 
 if __name__ == "__main__":
     cralwer = MacroCrawler()
-    md_df = cralwer.update_margin_debt_data()
-
-    print(md_df.tail())
+    md_df = cralwer.merge_m2_margin_sp500_abs()
+ 
+    print("merge data")
+    print(md_df)
 
