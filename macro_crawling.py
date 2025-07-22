@@ -1,8 +1,12 @@
 import os
 import time
+from dateutil.relativedelta import relativedelta
 import pandas as pd
 import numpy as np
 import requests
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import seaborn as sns
 import yfinance as yf
@@ -20,6 +24,10 @@ from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.core.os_manager import ChromeType
 
 from md_updater import MarginDebtUpdater
+
+# 한글 폰트 설정 (Windows에서는 기본적으로 'Malgun Gothic' 가능)
+mpl.rcParams['font.family'] = 'Malgun Gothic'  # 또는 'NanumGothic', 'AppleGothic' (Mac)
+mpl.rcParams['axes.unicode_minus'] = False  # 마이너스(-) 깨짐 방지
 
 # 🔑 환경변수 로딩용 (필요 시 pip install python-dotenv)
 from dotenv import load_dotenv
@@ -257,6 +265,62 @@ class MacroCrawler:
         df["Margin YoY (%)"] = df["margin_debt"].pct_change(periods=12) * 100
         return df[["Month/Year", "margin_debt", "Margin YoY (%)"]]
 
+
+    def generate_zscore_trend_signals(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Margin Debt / M2 비율의 z-score 및 추세 조건 기반 전략
+
+        매수 조건:
+            - margin_debt / m2 비율의 z-score < -1.5
+            - 비율이 전월 대비 상승 (반등 시작)
+
+        매도 조건:
+            - z-score > 1.5
+            - 비율이 전월 대비 -5% 이상 급락
+
+        실제 매매는 신호일 기준 +2개월 후 진입
+        수익률은 진입일부터 3개월 후까지의 S&P500 종가 기준
+
+        Parameters:
+            df : DataFrame with 'date', 'm2', 'margin_debt', 'sp500_close' columns
+
+        Returns:
+            DataFrame with signal type, signal date, action date, and 3-month return
+        """
+
+        df = df.sort_values("date").copy()
+        df["ratio"] = df["margin_debt"] / df["m2"]
+        df["ratio_z"] = (df["ratio"] - df["ratio"].rolling(window=36, min_periods=12).mean()) / \
+                        df["ratio"].rolling(window=36, min_periods=12).std()
+        df["ratio_change_pct"] = df["ratio"].pct_change() * 100
+
+        # 신호 정의
+        df["buy_signal"] = (df["ratio_z"] < -1.2) & (df["ratio_change_pct"] > 0)
+        df["sell_signal"] = (df["ratio_z"] > 1.5) & (df["ratio_change_pct"] < -5)
+
+        results = []
+        for idx, row in df.iterrows():
+            if row["buy_signal"] or row["sell_signal"]:
+                signal = "BUY" if row["buy_signal"] else "SELL"
+                signal_date = row["date"]
+                action_date = signal_date + relativedelta(months=2)
+
+                future_df = df[df["date"] >= action_date].reset_index(drop=True)
+                if len(future_df) < 3:
+                    continue
+
+                entry_price = future_df.loc[0, "sp500_close"]
+                exit_price = future_df.loc[2, "sp500_close"]
+                return_pct = (exit_price - entry_price) / entry_price
+
+                results.append({
+                    "signal": signal,
+                    "original_signal_date": signal_date,
+                    "action_date": future_df.loc[0, "date"],
+                    "return_3m": return_pct
+                })
+
+        return pd.DataFrame(results)
         
     def get_sp500(self):
         '''
@@ -288,10 +352,10 @@ class MacroCrawler:
         df_m2['date'] = df_m2['date'].dt.to_period('M').dt.to_timestamp()
         df_m2 = df_m2.rename(columns={'value' : 'm2'})
 
-        df_margin = self.update_margin_debt_data().copy()
+        df_margin = self.get_margin_yoy_change().copy()
         df_margin['date'] = df_margin['Month/Year'].dt.to_period('M').dt.to_timestamp()
-        df_margin["margin_debt"] = df_margin["Debit Balances in Customers' Securities Margin Accounts"]
-        df_margin["margin_debt"] = df_margin["margin_debt"].str.replace(',','').astype(int)
+        #df_margin["margin_debt"] = df_margin["Debit Balances in Customers' Securities Margin Accounts"]
+        #df_margin["margin_debt"] = df_margin["margin_debt"].str.replace(',','').astype(int)
 
         df_sp500 = self.get_sp500().copy()
         df_sp500['date'] = pd.to_datetime(df_sp500['date'])  # 혹시 모르니 안전하게
@@ -299,59 +363,70 @@ class MacroCrawler:
         df = pd.merge(df_m2, df_margin[['date', 'margin_debt']], on='date', how='inner')
         df = pd.merge(df, df_sp500, on='date', how='inner')
         return df
-    
-    def plot_macro_absolute(self, merge_df, margin_peak_df, margin_bottom_df):
-        '''
-        m2, margin_debt, snp500지수 간 상관관계 그래프 그리기
-        merge_df : 병합 데이터
-        margin_peak_df : margin_debt 추세 하락 표기
-        margin_bottom_df : margin_debt 추세 반등 표기
-        '''
-        
-        df_norm = merge_df.copy()
-        df_norm['m2_norm'] = df_norm['m2'] / df_norm['m2'].iloc[0] * 100
-        df_norm['margin_debt_norm'] = df_norm['margin_debt'] / df_norm['margin_debt'].iloc[0] * 100
-        df_norm['sp500_norm'] = df_norm['sp500_close'] / df_norm['sp500_close'].iloc[0] * 100
+ 
 
-        fig, ax = plt.subplots(figsize=(14, 6))
-        ax.plot(df_norm['date'], df_norm['m2_norm'], label='M2 (정규화)', color='green')
-        ax.plot(df_norm['date'], df_norm['margin_debt_norm'], label='마진 부채 (정규화)', color='red')
-        ax.plot(df_norm['date'], df_norm['sp500_norm'], label='S&P 500 (정규화)', color='blue', alpha=0.7)
+    def plot_sp500_with_signals_and_ratio(self, df: pd.DataFrame):
+        """
+        S&P500 종가와 margin_debt/m2 비율 및 매수/매도 신호를 함께 시각화
+        - 좌측 y축: S&P500
+        - 우측 y축: margin_debt / m2 비율
+        - 매수 시점: 초록색 ▲
+        - 매도 시점: 빨간색 ▼
+        """
 
-        # margin_drop_date 표시
-        try:
-            margin_peak_df['margin_drop_date'] = pd.to_datetime(margin_peak_df['margin_drop_date'])
-            for d in margin_peak_df['margin_drop_date']:
-                ax.axvline(d, color='gray', linestyle='--', alpha=0.6)
-                ax.text(d, ax.get_ylim()[1]*0.95, '📉', fontsize=9, color='gray', rotation=90, ha='center')
-        
-        except KeyError:
-            pass
+        # 비율 및 신호 계산
+        df = df.copy()
+        df["ratio"] = df["margin_debt"] / df["m2"]
+        df["ratio_z"] = (df["ratio"] - df["ratio"].rolling(window=36, min_periods=12).mean()) / \
+                        df["ratio"].rolling(window=36, min_periods=12).std()
+        df["ratio_change_pct"] = df["ratio"].pct_change() * 100
 
-        # entry_date 표시 (매수 후보 시점)
-        try:
-            for d in margin_bottom_df['entry_date']:
-                ax.axvline(d, color='blue', linestyle='--', alpha=0.4)
-                ax.text(d, ax.get_ylim()[1]*0.9, '💰', fontsize=9, color='blue', rotation=90, ha='center')
+        # 완화된 조건
+        df["buy_signal"] = (df["ratio_z"] < -1.2) & (df["ratio_change_pct"] > 0)
+        df["sell_signal"] = (df["ratio_z"] > 1.5) & (df["ratio_change_pct"] < -5)
 
-        except KeyError:
-            pass
+        # 시각화
+        fig, ax1 = plt.subplots(figsize=(14, 6))
 
-        ax.set_title("M2 / Margin Debt / S&P 500 추이 (정규화 기준 100)")
-        ax.set_ylabel("지표 정규화 값 (기준시점 = 100)")
-        ax.set_xlabel("날짜")
-        ax.grid(True)
-        ax.legend()
-        plt.tight_layout()
+        # S&P500 지수 (좌측 y축)
+        ax1.plot(df["date"], df["sp500_close"], color="blue", label="S&P500 지수", linewidth=2)
+        ax1.scatter(
+            df[df["buy_signal"]]["date"],
+            df[df["buy_signal"]]["sp500_close"],
+            color="green", marker="^", s=100, label="매수 신호"
+        )
+        ax1.scatter(
+            df[df["sell_signal"]]["date"],
+            df[df["sell_signal"]]["sp500_close"],
+            color="red", marker="v", s=100, label="매도 신호"
+        )
+        ax1.set_ylabel("S&P500 종가", color="blue")
+        ax1.tick_params(axis='y', labelcolor="blue")
+
+        # margin_debt / m2 비율 (우측 y축)
+        ax2 = ax1.twinx()
+        ax2.plot(df["date"], df["ratio"], color="gray", linestyle="--", label="Margin Debt / M2 비율")
+        ax2.set_ylabel("Margin Debt / M2 비율", color="gray")
+        ax2.tick_params(axis='y', labelcolor="gray")
+
+        # 제목 및 범례
+        fig.suptitle("S&P500 + 매수/매도 신호 + Margin Debt / M2 비율", fontsize=14)
+        fig.legend(loc="upper left", bbox_to_anchor=(0.1, 0.9))
+        fig.tight_layout()
         plt.show()
-
-
   
 
 if __name__ == "__main__":
     cralwer = MacroCrawler()
-    md_df = cralwer.merge_m2_margin_sp500_abs()
+
+
+    merge_df = cralwer.merge_m2_margin_sp500_abs()
+    signal_md_df = cralwer.generate_zscore_trend_signals(merge_df)
+    signal_graph = cralwer.plot_sp500_with_signals_and_ratio(merge_df)
+
  
-    print("merge data")
-    print(md_df)
+    print("signal data")
+    print(signal_md_df)
+    print(signal_graph)
+
 
