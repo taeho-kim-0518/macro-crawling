@@ -384,7 +384,7 @@ class MacroCrawler:
         return df
  
 
-    def plot_sp500_with_signals_and_graph(self, df: pd.DataFrame):
+    def plot_sp500_with_signals_and_graph(self, df: pd.DataFrame, save_to=None):
         """
         S&P500 종가와 margin_debt/m2 비율 및 매수/매도 신호를 함께 시각화
         df : 병합된 데이터프레임(generate_mdyoy_signals)
@@ -433,11 +433,15 @@ class MacroCrawler:
         fig.suptitle("S&P500 + 매수/매도 신호 + Margin Debt / M2 비율", fontsize=14)
         fig.legend(loc="upper left", bbox_to_anchor=(0.1, 0.9))
         fig.tight_layout()
-        plt.show()
+        if save_to:
+            fig.savefig(save_to, format='png')
+            plt.close(fig)
+        else:
+            plt.show()
     
 
 
-    def plot_sp500_with_mdyoy_signals_and_graph(self, df):
+    def plot_sp500_with_mdyoy_signals_and_graph(self, df, save_to=None):
         '''
         S&P500, Margin Debt / M2, YoY 전략 기반 매수/매도 시점 시각화
         df : 병합된 데이터프레임(merge_m2_margin_sp500_abs)
@@ -471,17 +475,24 @@ class MacroCrawler:
         fig.suptitle("📉 Margin Debt YoY 전략: S&P500 및 Margin Debt / M2 비율", fontsize=14)
         fig.legend(loc="upper center", bbox_to_anchor=(0.5, -0.05), ncol=3)
         plt.tight_layout()
-        plt.show()
+        if save_to:
+            fig.savefig(save_to, format='png')
+            plt.close(fig)
+        else:
+            plt.show()
 
     def check_today_md_signal(self):
         """
-        오늘이 generate_zscore_trend_signals 또는 generate_mdyoy_signals 기준 매수/매도 진입일인지 확인
-        
-        - 오늘이 action_date에 해당하면 BUY/SELL 출력
-        - 두 전략 중 하나라도 해당하면 알려줌
+        오늘이 generate_zscore_trend_signals 또는 generate_mdyoy_signals 기준
+        매수/매도 유효월(month)에 속하는지 확인
+
+        - today가 action_date와 같은 달(Month)이면 유효
+        - 그 달 전체를 매매 유효 시점으로 간주
         """
 
-        today = pd.Timestamp.today()
+        today = pd.Timestamp.today().normalize()  
+        # today = pd.Timestamp("2023-03-15").normalize()  # 테스트용 날짜 강제 설정 
+        today_month = today.to_period("M")  # 월 단위 비교용
 
         print(f"📅 오늘 날짜 (확인 기준): {today.date()}")
 
@@ -490,23 +501,26 @@ class MacroCrawler:
 
         # --- 전략 1: z-score 기반
         zscore_signal_df = self.generate_zscore_trend_signals(df)
-        zscore_today = zscore_signal_df[zscore_signal_df["action_date"] == today]
+        zscore_signal_df["action_month"] = zscore_signal_df["action_date"].dt.to_period("M")
+        zscore_today = zscore_signal_df[zscore_signal_df["action_month"] == today_month]
 
-        # --- 전략 2: margin YOY 기반
+        # --- 전략 2: margin YoY 기반
         mdyoy_df = self.generate_mdyoy_signals(df)
-        mdyoy_today = mdyoy_df[mdyoy_df["action_date"] == today]
+        mdyoy_df["action_month"] = mdyoy_df["action_date"].dt.to_period("M")
+        mdyoy_today = mdyoy_df[mdyoy_df["action_month"] == today_month]
 
         signal_found = False
 
         if not zscore_today.empty:
-            print("\n📌 [Z-Score 전략] 오늘 매매 신호 있음!")
+            print("\n📌 [Z-Score 전략] 이번 달 매매 신호 있음!")
             for _, row in zscore_today.iterrows():
                 print(f"👉 {row['action_date'].date()} : {row['signal']} 신호 (발생일: {row['original_signal_date'].date()})")
             signal_found = True
 
-        if not mdyoy_today[mdyoy_today["buy_signal"] | mdyoy_today["sell_signal"]].empty:
-            print("\n📌 [Margin YoY 전략] 오늘 매매 신호 있음!")
-            for _, row in mdyoy_today.iterrows():
+        mdyoy_filtered = mdyoy_today[mdyoy_today["buy_signal"] | mdyoy_today["sell_signal"]]
+        if not mdyoy_filtered.empty:
+            print("\n📌 [Margin YoY 전략] 이번 달 매매 신호 있음!")
+            for _, row in mdyoy_filtered.iterrows():
                 if row["buy_signal"]:
                     print(f"👉 {row['action_date'].date()} : BUY 신호 (발생일: {row['signal_date'].date()})")
                 elif row["sell_signal"]:
@@ -514,7 +528,7 @@ class MacroCrawler:
             signal_found = True
 
         if not signal_found:
-            print("\n✅ 오늘은 매수/매도 진입일이 아닙니다.")
+            print("\n✅ 이번 달은 매수/매도 진입 시점이 아닙니다.")
 
 
 if __name__ == "__main__":
