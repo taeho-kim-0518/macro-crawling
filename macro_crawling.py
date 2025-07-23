@@ -187,7 +187,7 @@ class MacroCrawler:
         '''
         md_df = self.margin_updater.update_csv()
         print("✅ 마진 부채 CSV 업데이트 완료")
-        return self.margin_updater.df
+        return md_df
 
 
     def get_margin_debt_data(self):
@@ -535,7 +535,7 @@ if __name__ == "__main__":
     cralwer = MacroCrawler()
 
 
-    signal_today = cralwer.check_today_md_signal()
+    signal_today = cralwer.update_margin_debt_data()
 
  
     print("signal data")
