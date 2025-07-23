@@ -95,18 +95,41 @@ class MarginDebtUpdater :
         data = []
         headers = [th.get_text(strip=True) for th in rows[0].find_all("th")]
 
+        # for row in rows[1:]:
+        #     cols = [td.get_text(strip=True).replace(",", "") for td in row.find_all("td")]
+        #     if len(cols) == len(headers):
+        #         data.append(cols)
+
+        # df = pd.DataFrame(data, columns=headers)
+        # df["Month/Year"] = pd.to_datetime(df["Month/Year"], format="%b-%y")
+
+        # for col in df.columns[1:]:
+        #     df[col] = pd.to_numeric(df[col], errors="coerce")
+
         for row in rows[1:]:
-            cols = [td.get_text(strip=True).replace(",", "") for td in row.find_all("td")]
-            if len(cols) == len(headers):
-                data.append(cols)
+                cols = [td.get_text(strip=True) for td in row.find_all("td")]
+                if len(cols) == len(headers):
+                    data.append(cols)
 
         df = pd.DataFrame(data, columns=headers)
-        df["Month/Year"] = pd.to_datetime(df["Month/Year"], format="%b-%y")
 
+        try:
+            df["Month/Year"] = pd.to_datetime(df["Month/Year"], format="%b-%y")
+        except:
+            df["Month/Year"] = df["Month/Year"].apply(smart_parse_month_year)
+
+        # 모든 숫자형 컬럼 안전하게 변환
         for col in df.columns[1:]:
+            df[col] = (
+                df[col]
+                .astype(str)
+                .str.replace(",", "", regex=False)
+                .str.replace("$", "", regex=False)
+            )
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
         return df
+
 
     def update_csv(self):
 
@@ -137,6 +160,6 @@ class MarginDebtUpdater :
         return self.df
 
 # 문자열 날짜 바꿀 때 사용
-if __name__ == "__main__":
-    fix_md_csv_format("md_df.csv")
+# if __name__ == "__main__":
+#     fix_md_csv_format("md_df.csv")
 

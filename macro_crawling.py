@@ -264,7 +264,9 @@ class MacroCrawler:
 
         df = df.sort_values("Month/Year")
         df["margin_debt"] = df["Debit Balances in Customers' Securities Margin Accounts"]
-        df["margin_debt"] = df["margin_debt"].str.replace(',','').astype(int)
+        df["margin_debt_clean"] = df["margin_debt"].astype(str).str.replace(',', '', regex=False)
+        df["margin_debt"] = pd.to_numeric(df["margin_debt_clean"], errors="coerce").fillna(0).astype(int)
+        df = df.drop(columns=["margin_debt_clean"])
         df["Margin YoY (%)"] = df["margin_debt"].pct_change(periods=12) * 100
         return df[["Month/Year", "margin_debt", "Margin YoY (%)"]]
 
