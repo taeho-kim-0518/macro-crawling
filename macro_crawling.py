@@ -185,8 +185,11 @@ class MacroCrawler:
         '''
         로컬에 저장된 margin_debt 파일 불러오기
         '''
-        md_df = self.margin_updater.update_csv()
-        print("✅ 마진 부채 CSV 업데이트 완료")
+        try:
+            md_df = self.margin_updater.update_csv()
+            print("✅ 마진 부채 CSV 업데이트 완료")
+        except Exception as e:
+            print("📛 마진 데이터 업데이트 실패:", e)
         return md_df
 
 
@@ -198,7 +201,7 @@ class MacroCrawler:
         url = "https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics"
 
         try:
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=20)
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "html.parser")
 
