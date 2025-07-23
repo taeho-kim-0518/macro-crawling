@@ -5,6 +5,18 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from io import BytesIO
 import traceback
+import os
+import matplotlib as mpl
+import matplotlib.font_manager as fm
+
+font_path = os.path.join("fonts", "NanumGothic.ttf")
+if os.path.exists(font_path):
+    font_prop = fm.FontProperties(fname=font_path)
+    mpl.rcParams['font.family'] = font_prop.get_name()
+    mpl.rcParams['axes.unicode_minus'] = False
+else:
+    print("❌ 폰트 파일 없음:", font_path)
+
 
 app = FastAPI()
 
