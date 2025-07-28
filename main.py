@@ -8,6 +8,9 @@ import traceback
 import os
 import matplotlib as mpl
 import matplotlib.font_manager as fm
+from fastapi.responses import HTMLResponse
+import base64
+from fastapi.responses import PlainTextResponse
 
 font_path = os.path.join("fonts", "NanumGothic.ttf")
 if os.path.exists(font_path):
@@ -201,32 +204,205 @@ def rate_correlations(show_plot: bool = False):
         return {"error": str(e)}
     
 
-@app.get("/plot-sell-signals")
-def plot_sell_signals():
+@app.get("/plot-sell-signals-with-data", response_class=HTMLResponse)
+def plot_sell_signals_with_data():
     try:
         crawler = MacroCrawler()
         df = crawler.generate_rate_cut_signals()
+        sell_df = df[df["signal"] == True].copy()
+
+        # 이미지 생성
         buf = BytesIO()
-        # plot_sp500_with_sell_signals는 plt.show() 대신 savefig를 지원하므로 save_to 인자로 BytesIO 전달
-        crawler.plot_sp500_with_sell_signals()  # 필요하다면 수정하여 save_to 매개변수 추가
-        plt.savefig(buf, format='png')
-        plt.close()
+        crawler.plot_sp500_with_sell_signals(save_to=buf)
         buf.seek(0)
-        return StreamingResponse(buf, media_type="image/png")
+        img_base64 = base64.b64encode(buf.read()).decode("utf-8")
+
+        # 표로 표시할 데이터 선택 (필요한 컬럼만)
+        table_html = sell_df[["date", "sp500_close", "CLI_index", "PMI"]].to_html(index=False, classes="data-table")
+
+        # HTML 출력
+        html = f"""
+        <html>
+        <head>
+            <title>Sell Signal with Chart</title>
+            <style>
+                body {{
+                    font-family: 'Segoe UI', sans-serif;
+                    padding: 30px;
+                    background-color: #f9f9f9;
+                }}
+                h2 {{
+                    color: #333;
+                }}
+                img {{
+                    border: 1px solid #ccc;
+                    max-width: 100%;
+                }}
+                .data-table {{
+                    border-collapse: collapse;
+                    width: 100%;
+                    margin-top: 20px;
+                }}
+                .data-table th, .data-table td {{
+                    border: 1px solid #ddd;
+                    padding: 8px;
+                    text-align: center;
+                }}
+                .data-table th {{
+                    background-color: #f2f2f2;
+                }}
+            </style>
+        </head>
+        <body>
+            <h2>📉 Sell Signals (CLI < 130 & PMI < 50 within 6M of Rate Cut)</h2>
+            <img src="data:image/png;base64,{img_base64}" alt="Sell Signal Chart">
+            <h3>📋 매도 시그널 발생 시점</h3>
+            {table_html}
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=html)
+
+    except Exception as e:
+        return HTMLResponse(content=f"<h1>❌ Error</h1><pre>{str(e)}</pre>")
+    
+
+@app.get("/plot-buy-signals-with-data", response_class=HTMLResponse)
+def plot_buy_signals_with_data():
+    try:
+        crawler = MacroCrawler()
+        df = crawler.generate_buy_signals_from_hike()
+        buy_df = df[df["buy_signal"] == True].copy()
+
+        # 이미지 생성
+        buf = BytesIO()
+        crawler.plot_buy_signals_from_hike(save_to=buf)
+        buf.seek(0)
+        img_base64 = base64.b64encode(buf.read()).decode("utf-8")
+
+        # 표 HTML 변환
+        table_html = buy_df[["date", "sp500_close", "CLI_index", "pmi"]].to_html(index=False, classes="data-table")
+
+        # HTML 페이지 구성
+        html = f"""
+        <html>
+        <head>
+            <title>Buy Signal with Chart</title>
+            <style>
+                body {{
+                    font-family: 'Segoe UI', sans-serif;
+                    padding: 30px;
+                    background-color: #f9f9f9;
+                }}
+                h2 {{
+                    color: #333;
+                }}
+                img {{
+                    border: 1px solid #ccc;
+                    max-width: 100%;
+                }}
+                .data-table {{
+                    border-collapse: collapse;
+                    width: 100%;
+                    margin-top: 20px;
+                }}
+                .data-table th, .data-table td {{
+                    border: 1px solid #ddd;
+                    padding: 8px;
+                    text-align: center;
+                }}
+                .data-table th {{
+                    background-color: #f2f2f2;
+                }}
+            </style>
+        </head>
+        <body>
+            <h2>📈 Buy Signals (CLI > 130 & PMI > 50 within 6M of Rate Hike)</h2>
+            <img src="data:image/png;base64,{img_base64}" alt="Buy Signal Chart">
+            <h3>📋 매수 시그널 발생 시점</h3>
+            {table_html}
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=html)
+
+    except Exception as e:
+        return HTMLResponse(content=f"<h1>❌ Error</h1><pre>{str(e)}</pre>")
+    
+@app.get("/analyze-pe")
+def analyze_pe_compare():
+
+    try:
+        crawler = MacroCrawler()
+        forward_pe_result = crawler.get_forward_pe()
+        ttm_pe_raw = crawler.get_ttm_pe()
+
+        forward_pe = forward_pe_result["forward_pe"]
+        ttm_pe = float(ttm_pe_raw.replace(",", "").strip())
+
+        # 해석 코멘트 생성
+        comment = []
+
+        if forward_pe > 21:
+            comment.append("⚠️ Forward PER 기준으로 고평가 구간입니다.")
+        elif forward_pe < 17:
+            comment.append("✅ Forward PER 기준으로 저평가 구간입니다.")
+        else:
+            comment.append("⚖️ Forward PER 기준으로 평균 범위입니다.")
+
+        if ttm_pe > forward_pe:
+            comment.append("🟢 시장은 향후 실적 개선을 기대하는 낙관적인 흐름입니다.")
+        elif ttm_pe < forward_pe:
+            comment.append("🔴 시장은 실적 둔화를 반영하는 보수적인 흐름입니다.")
+        else:
+            comment.append("⚪ 시장은 현재 실적 수준을 유지할 것으로 보고 있습니다.")
+
+        return {
+            "date": forward_pe_result["date"],
+            "forward_pe": round(forward_pe, 2),
+            "ttm_pe": round(ttm_pe, 2),
+            "comment": comment
+        }
+
     except Exception as e:
         return {"error": str(e)}
     
 
-@app.get("/plot-buy-signals")
-def plot_buy_signals():
+@app.get("/analyze-vix")
+def analyze_vix():
+
     try:
         crawler = MacroCrawler()
-        df = crawler.generate_buy_signals_from_hike()
-        buf = BytesIO()
-        crawler.plot_buy_signals_from_hike()  # 마찬가지로 save_to 매개변수를 추가하는 편이 좋습니다.
-        plt.savefig(buf, format='png')
-        plt.close()
-        buf.seek(0)
-        return StreamingResponse(buf, media_type="image/png")
+        vix_df = crawler.get_vix_index()
+
+        # 해석 코멘트 생성
+        comment = []
+
+        vix_df = vix_df.sort_values('date')
+        latest = vix_df.iloc[-1]
+
+        date = latest['date']
+        vix = float(latest['vix'])  # ← 여기서 float 변환
+
+        result = [f"📅 기준일: {date}",
+                f"📊 VIX 지수 (S&P 500 변동성): {vix:.2f}"]
+
+        if vix < 12:
+            comment.append("📉 과도한 낙관 상태 → 저변동성 환경 (고점 경계 가능성)")
+        elif vix < 20:
+            comment.append("🟢 시장이 안정적인 상태 (낙관적 심리)")
+        elif vix < 30:
+            comment.append("⚠️ 시장 불확실성 증가 → 투자자 주의 필요")
+        elif vix <40:
+            comment.append("🟠 시장 위험 상태 → 과매도/저점 반등 가능성 (역발상 매수 고려 구간)")
+        else:
+            comment.append("🔴 시장 극단적 불안 상태 → 과매도/저점 반등 가능성 (역발상 매수 고려 구간) ")
+
+        return {
+            "date": date,
+            "vix": round(vix, 2),
+            "comment": comment
+        }
+    
     except Exception as e:
         return {"error": str(e)}

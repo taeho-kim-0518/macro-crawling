@@ -20,6 +20,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 
+
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.core.os_manager import ChromeType
 
@@ -998,6 +999,21 @@ class MacroCrawler:
         df['CLI_index'] = pd.to_numeric(df['value'], errors='coerce')
         
         return df
+
+    def analyze_ecri_trend(self):
+
+        df = self.get_CLI()
+        x = np.arange(len(df))
+        y = df['CLI_index'].values
+        slope, _, r_value, _, _ = linregress(x, y)
+
+        if slope > 0.05:
+            return "📈 상승 추세 (경기 회복 기대)"
+        elif slope < -0.05:
+            return "📉 하락 추세 (경기 둔화 위험)"
+        else:
+            return "➖ 횡보 추세 (불확실성 지속)"
+
     
     def generate_rate_cut_signals(self):
         """
@@ -1129,13 +1145,149 @@ class MacroCrawler:
             plt.close(fig)
         else:
             plt.show()
+
+    def get_forward_pe(self):
+            url = 'https://en.macromicro.me/series/20052/sp500-forward-pe-ratio'
+
+            options = Options()
+            # options.add_argument("--headless")
+            options.add_argument("--disable-gpu")
+            options.add_argument("--no-sandbox")
+
+            driver = webdriver.Chrome(options=options)
+            driver.get(url)
+
+
+            try:
+                # ✅ 해당 요소가 로드될 때까지 대기 (최대 10초)
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.sidebar-sec.chart-stat-lastrows span.val"))
+                )
+            except:
+                driver.quit()
+                raise RuntimeError("📛 페이지 로딩 중 Forward PE 데이터를 찾지 못했습니다.")
+
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+            driver.quit()
+
+            latest_val = soup.select_one("div.sidebar-sec.chart-stat-lastrows span.val")
+            date = soup.select_one("div.sidebar-sec.chart-stat-lastrows .date-label")
+
+            if latest_val and date:
+                date_text = date.text.strip()
+                pe_val = float(latest_val.text.strip())
+                df = pd.DataFrame([{"date": date_text, "forward_pe": pe_val}])
+                return {
+                    "date": date_text,
+                    "forward_pe": pe_val,
+                    "df": df
+                }
+            else:
+                raise ValueError("📛 Forward PE 값을 찾을 수 없습니다.")
+            
+
+    def get_ttm_pe(self):
+        url = "https://ycharts.com/indicators/sp_500_pe_ratio"
+
+        options = Options()
+        options.add_argument("--headless")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
+
+        driver = webdriver.Chrome(options=options)
+        driver.get(url)
+        time.sleep(5)  # JS 로딩 대기
+
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        driver.quit()
+
+        # "Last Value" 텍스트가 있는 td 찾기
+        for td in soup.select("td.col-6"):
+            if "Last Value" in td.get_text(strip=True):
+                value_td = td.find_next_sibling("td")
+                if value_td:
+                    return value_td.get_text(strip=True)
+
+        return None
+
+
+    def analyze_pe(self):
+
+        ttm_pe = self.get_ttm_pe()
+        forward_pe_result = self.get_forward_pe()
+        forward_pe = forward_pe_result["forward_pe"]  # ✅ 숫자만 추출
+
+        # ✅ 문자열일 수 있는 ttm_pe를 float로 변환
+        ttm_pe = float(ttm_pe.replace(",", "").strip())
+
+        message = f"📊 S&P 500 Forward PER: {forward_pe:.2f}\n"
+        message += f"📊 S&P 500 TTM PER: {ttm_pe:.2f}\n\n"
+
+        # 절대적 고평가/저평가 판단
+        if forward_pe > 21:
+            message += "⚠️ Forward PER 기준으로 **고평가** 구간입니다.\n"
+        elif forward_pe < 17:
+            message += "✅ Forward PER 기준으로 **저평가** 구간입니다.\n"
+        else:
+            message += "⚖️ Forward PER 기준으로 **평균 범위**입니다.\n"
+
+        # TTM 대비 Forward 비교
+        if ttm_pe > forward_pe:
+            message += "🟢 시장은 **향후 실적 개선**을 기대하는 낙관적인 흐름입니다."
+        elif ttm_pe < forward_pe:
+            message += "🔴 시장은 **실적 둔화**를 반영하는 보수적인 흐름입니다."
+        else:
+            message += "⚪ 시장은 현재 실적 수준을 그대로 유지할 것으로 보고 있습니다."
+
+        return message
+    
+    def get_vix_index(self, period='10y'):
+        '''
+        VIX : VIX는 S&P 500 지수의 옵션 가격에 기초하며, 향후 30일간 지수의 풋옵션1과 콜옵션2 가중 가격을 결합하여 산정
+        향후 S&P 500지수가 얼마나 변동할 것으로 투자자들이 생각하는지를 반영
+        '''
+        df = yf.download('^VIX', period=period, interval='1d', progress=False)
+        if df.empty:
+            print("❌ VIX 데이터를 불러오지 못했습니다.")
+            return pd.DataFrame()
+
+        df = df.reset_index()
+        df = df[['Date', 'Close']].rename(columns={'Date': 'date', 'Close': 'vix'})
+        df['date'] = pd.to_datetime(df['date'])
+        return df
+
+
+    def analyze_vix(self):
+        df_vix = self.get_vix_index()
+        df_vix = df_vix.sort_values('date')
+        latest = df_vix.iloc[-1]
+
+        date = latest['date']
+        vix = float(latest['vix'])  # ← 여기서 float 변환
+
+        result = [f"📅 기준일: {date}",
+                f"📊 VIX 지수 (S&P 500 변동성): {vix:.2f}"]
+
+        if vix < 12:
+            result.append("📉 과도한 낙관 상태 → 저변동성 환경 (고점 경계 가능성)")
+        elif vix < 20:
+            result.append("🟢 시장이 안정적인 상태 (낙관적 심리)")
+        elif vix < 30:
+            result.append("⚠️ 시장 불확실성 증가 → 투자자 주의 필요")
+        elif vix <40:
+            result.append("🟠 시장 위험 상태 → 과매도/저점 반등 가능성 (역발상 매수 고려 구간)")
+        else:
+            result.append("🔴 시장 극단적 불안 상태 → 과매도/저점 반등 가능성 (역발상 매수 고려 구간) ")
+
+        return "\n".join(result)
    
 
 if __name__ == "__main__":
     cralwer = MacroCrawler()
 
 
-    data = cralwer.plot_sp500_with_sell_signals()
+    data = cralwer.analyze_vix()
+
 
     print("금리_매수매도 신호")
     print(data)
