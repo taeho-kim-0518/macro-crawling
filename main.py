@@ -334,15 +334,22 @@ def analyze_pe_compare():
 
     try:
         crawler = MacroCrawler()
-        forward_pe_result = crawler.get_forward_pe()
-        ttm_pe_raw = crawler.get_ttm_pe()
 
-        forward_pe = forward_pe_result["forward_pe"]
+        # Forward PE 추출
+        forward_pe_result = crawler.get_forward_pe()
+        forward_pe = forward_pe_result.get("forward_pe")
+        if forward_pe is None:
+            raise ValueError("📛 forward_pe 값을 가져올 수 없습니다.")
+
+        # TTM PE 추출
+        ttm_pe_raw = crawler.get_ttm_pe()
+        if not ttm_pe_raw:
+            raise ValueError("📛 TTM PE 값이 비어있습니다.")
         ttm_pe = float(ttm_pe_raw.replace(",", "").strip())
 
         # 해석 코멘트 생성
         comment = []
-
+        
         if forward_pe > 21:
             comment.append("⚠️ Forward PER 기준으로 고평가 구간입니다.")
         elif forward_pe < 17:
@@ -358,13 +365,16 @@ def analyze_pe_compare():
             comment.append("⚪ 시장은 현재 실적 수준을 유지할 것으로 보고 있습니다.")
 
         return {
-            "date": forward_pe_result["date"],
+            "date": forward_pe_result.get("date"),
             "forward_pe": round(forward_pe, 2),
             "ttm_pe": round(ttm_pe, 2),
             "comment": comment
         }
 
     except Exception as e:
+        print("❌ /analyze-pe 에러:", e)
+        import traceback
+        traceback.print_exc()
         return {"error": str(e)}
     
 
