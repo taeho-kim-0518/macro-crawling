@@ -1150,7 +1150,7 @@ class MacroCrawler:
             url = 'https://en.macromicro.me/series/20052/sp500-forward-pe-ratio'
 
             options = Options()
-            # options.add_argument("--headless")
+            options.add_argument("--headless")
             options.add_argument("--disable-gpu")
             options.add_argument("--no-sandbox")
 
