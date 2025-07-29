@@ -1426,11 +1426,42 @@ class MacroCrawler:
         return putcall_df  
 
 
+    def check_put_call_ratio_warning(self):
+        """
+        풋콜 레이티오 데이터를 받아와서서
+        매수 혹은 매도 시점을 출력하는 함수
+
+        ratio_type : equity, index 둘 중 하나 입력
+        """
+
+        put_call_ratio = self.update_putcall_ratio()
+        putcall_data_today = put_call_ratio.iloc[-1]
+        print("data : ", putcall_data_today)
+        date = putcall_data_today['date']
+        value = putcall_data_today['equity_value']
+
+        # 간단한 시그널 판단
+
+        result = [f"📅 기준일: {date}",
+                f"📊 Equity_putcall_ratio 지수 : {value:.2f}"]
+    
+        if value > 1.5:
+            result.append("📉 Equity: 공포심 과다 → 반등 가능성 (매수 시점 탐색)")
+        elif value < 0.5:
+            result.append("🚨 Equity: 과열 탐욕 상태 → 매도 경고 또는 조정 가능성")
+        else:
+            result.append("⚖️ Equity: 중립 구간")
+
+        return "\n".join(result)
+
+
+
+
 if __name__ == "__main__":
     cralwer = MacroCrawler()
 
 
-    data = cralwer.update_putcall_ratio()
+    data = cralwer.get_bull_bear_spread()
 
 
     print("금리_매수매도 신호")
