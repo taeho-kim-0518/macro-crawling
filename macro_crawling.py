@@ -26,6 +26,8 @@ from webdriver_manager.core.os_manager import ChromeType
 
 from md_updater import MarginDebtUpdater
 from ism_pmi_updater import ISMPMIUpdater
+from SNP_forward_pe_updater import forwardpe_updater
+from putcall_ratio_updater import PutCallRatioUpdater
 
 # 한글 폰트 설정 (Windows에서는 기본적으로 'Malgun Gothic' 가능)
 mpl.rcParams['font.family'] = 'Malgun Gothic'  # 또는 'NanumGothic', 'AppleGothic' (Mac)
@@ -52,6 +54,10 @@ class MacroCrawler:
         self.margin_updater = MarginDebtUpdater("md_df.csv")
         # ISM PMI 업데이트기 연결
         self.pmi_updater = ISMPMIUpdater("ism_pmi_data.csv")
+        # Forward PE 업데이트기 연결
+        self.snp_forwardpe_updater = forwardpe_updater("forward_pe_data.csv")
+        # PUT CALL Ratio 업데이트기 연결
+        self.put_call_ratio_updater = PutCallRatioUpdater("put_call_ratio.csv")
 
     def get_10years_treasury_yeild(self):
         '''
@@ -1146,24 +1152,36 @@ class MacroCrawler:
         else:
             plt.show()
 
+
+    def update_snp_forwardpe_data(self):
+        '''
+        로컬에 저장된 S&P500 forward pe 파일 불러오기
+        '''
+        try:
+            snp_fp_df = self.snp_forwardpe_updater.update_forward_pe_csv()
+            print("✅ S&P500 Forward PE CSV 업데이트 완료")
+        except Exception as e:
+            print("📛 S&P500 Forward PE 업데이트 실패:", e)
+
+        return snp_fp_df    
+
+
     def get_forward_pe(self):
             url = 'https://en.macromicro.me/series/20052/sp500-forward-pe-ratio'
 
             options = Options()
-            options.add_argument("--headless")
+            # options.add_argument("--headless")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-gpu")
-            options.add_argument("--disable-dev-shm-usage")
-            options.binary_location = "/usr/bin/chromium"
+ 
 
-            service = Service("/usr/bin/chromedriver")
-            driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=options)
+            driver = webdriver.Chrome(options=options)
             driver.get(url)
 
 
             try:
                 # ✅ 해당 요소가 로드될 때까지 대기 (최대 10초)
-                WebDriverWait(driver, 15).until(
+                WebDriverWait(driver, 20).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "div.sidebar-sec.chart-stat-lastrows span.val"))
                 )
             except:
@@ -1182,46 +1200,70 @@ class MacroCrawler:
                 df = pd.DataFrame([{"date": date_text, "forward_pe": pe_val}])
                 return {
                     "date": date_text,
-                    "forward_pe": pe_val,
-                    "df": df
+                    "forward_pe": pe_val
                 }
             else:
                 raise ValueError("📛 Forward PE 값을 찾을 수 없습니다.")
             
 
     def get_ttm_pe(self):
-        url = "https://ycharts.com/indicators/sp_500_pe_ratio"
+        url = "https://www.multpl.com/s-p-500-pe-ratio"
 
-        options = Options()
-        options.add_argument("--headless")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--no-sandbox")
+        # options = Options()
+        # options.add_argument("--headless")
+        # options.add_argument("--disable-gpu")
+        # options.add_argument("--no-sandbox")
 
-        driver = webdriver.Chrome(options=options)
-        driver.get(url)
-        time.sleep(5)  # JS 로딩 대기
+        # driver = webdriver.Chrome(options=options)
+        # driver.get(url)
+        # time.sleep(5)  # JS 로딩 대기
 
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        driver.quit()
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # 날짜 추출
+        timestamp_tag = soup.select_one("#timestamp")
+        date = timestamp_tag.get_text(strip=True)
+
+        # PE 값 추출
+        current_div = soup.select_one("#current")
+        
+        # <div id="current"> 내에서 <b> 태그 다음에 나오는 텍스트 노드가 우리가 원하는 숫자
+        b_tag = current_div.find("b")
+        ttm_pe = b_tag.next_sibling.strip()
+
+
+        return {
+            "date": date,
+            "ttm_pe": ttm_pe
+        }   
+
+        # soup = BeautifulSoup(driver.page_source, "html.parser")
+        # driver.quit()
 
         # "Last Value" 텍스트가 있는 td 찾기
-        for td in soup.select("td.col-6"):
-            if "Last Value" in td.get_text(strip=True):
-                value_td = td.find_next_sibling("td")
-                if value_td:
-                    return value_td.get_text(strip=True)
+        # for td in soup.select("td.col-6"):
+        #     if "Last Value" in td.get_text(strip=True):
+        #         value_td = td.find_next_sibling("td")
+        #         if value_td:
+        #             return {
+        #                 'date : '
+        #             }# value_td.get_text(strip=True)
 
         return None
 
 
     def analyze_pe(self):
 
-        ttm_pe = self.get_ttm_pe()
-        forward_pe_result = self.get_forward_pe()
-        forward_pe = forward_pe_result["forward_pe"]  # ✅ 숫자만 추출
+        ttm_pe_result = self.get_ttm_pe()
+        ttm_pe = ttm_pe_result["ttm_pe"]  # 문자열
+
+        forward_pe_result = self.update_snp_forwardpe_data()
+        forward_pe = forward_pe_result["forward_pe"].iloc[-1]
 
         # ✅ 문자열일 수 있는 ttm_pe를 float로 변환
-        ttm_pe = float(ttm_pe.replace(",", "").strip())
+        ttm_pe = float(ttm_pe) #.replace(",", "").strip()
+        forward_pe = float(forward_pe)
 
         message = f"📊 S&P 500 Forward PER: {forward_pe:.2f}\n"
         message += f"📊 S&P 500 TTM PER: {ttm_pe:.2f}\n\n"
@@ -1233,6 +1275,14 @@ class MacroCrawler:
             message += "✅ Forward PER 기준으로 **저평가** 구간입니다.\n"
         else:
             message += "⚖️ Forward PER 기준으로 **평균 범위**입니다.\n"
+
+        # TTM 기준 고평가/저평가 판단
+        if ttm_pe > 20:
+            message += "⚠️ TTM PER 기준으로 **역사적 고평가** 구간입니다.\n"
+        elif ttm_pe < 13:
+            message += "✅ TTM PER 기준으로 **저평가** 구간입니다.\n"
+        else:
+            message += "⚖️ TTM PER 기준으로 **평균 수준**입니다.\n"
 
         # TTM 대비 Forward 비교
         if ttm_pe > forward_pe:
@@ -1283,13 +1333,104 @@ class MacroCrawler:
             result.append("🔴 시장 극단적 불안 상태 → 과매도/저점 반등 가능성 (역발상 매수 고려 구간) ")
 
         return "\n".join(result)
-   
+    
+    # M2/PER(Forward) 데이터 베이스 구할 수 있나?    
+
+    def get_equity_put_call_ratio(self):
+        url = 'https://ycharts.com/indicators/cboe_equity_put_call_ratio'
+
+        options = Options()
+        options.add_argument("--headless")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
+
+        driver = webdriver.Chrome(options=options)
+        driver.get(url)
+        time.sleep(5)  # JS 로딩 대기
+
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        driver.quit()
+
+        # "Last Value" 텍스트가 있는 td 찾기
+        for td in soup.select("td.col-6"):
+            if "Last Value" in td.get_text(strip=True):
+                value_td = td.find_next_sibling("td")
+                if value_td:
+                    equity_value = value_td.get_text(strip=True)
+                    break
+
+        # ✅ Last Period (날짜) 추출 - tr 기반으로 따로 탐색
+        for row in soup.find_all("tr"):
+            tds = row.find_all("td")
+            if len(tds) == 2 and "Latest Period" in tds[0].get_text(strip=True):
+                date = tds[1].get_text(strip=True)
+                break
+
+        if equity_value and date:
+            return {
+                "date": date,
+                "equity_value": equity_value
+            }
+        else:
+            raise ValueError("❌ Last Value 또는 Last Period를 찾을 수 없습니다.")
+
+
+    def get_index_put_call_ratio(self):
+        url = 'https://ycharts.com/indicators/cboe_index_put_call_ratio'
+
+        options = Options()
+        options.add_argument("--headless")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
+
+        driver = webdriver.Chrome(options=options)
+        driver.get(url)
+        time.sleep(5)  # JS 로딩 대기
+
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        driver.quit()
+
+        # "Last Value" 텍스트가 있는 td 찾기
+        for td in soup.select("td.col-6"):
+            if "Last Value" in td.get_text(strip=True):
+                value_td = td.find_next_sibling("td")
+                if value_td:
+                    index_value = value_td.get_text(strip=True)
+                    break
+
+        # ✅ Last Period (날짜) 추출 - tr 기반으로 따로 탐색
+        for row in soup.find_all("tr"):
+            tds = row.find_all("td")
+            if len(tds) == 2 and "Latest Period" in tds[0].get_text(strip=True):
+                date = tds[1].get_text(strip=True)
+                break
+
+        if index_value and date:
+            return {
+                "date": date,
+                "equity_value": index_value
+            }
+        else:
+            raise ValueError("❌ Last Value 또는 Last Period를 찾을 수 없습니다.")
+
+    def update_putcall_ratio(self):
+        '''
+        로컬에 저장된 PUT CALL RATIO 파일 불러오기
+        '''
+        try:
+            putcall_df = self.put_call_ratio_updater.update_csv()
+            print("✅ PutCall Ratio CSV 업데이트 완료")
+        except Exception as e:
+            print("📛 PutCall Ratio 업데이트 실패:", e)
+
+        return putcall_df  
+
 
 if __name__ == "__main__":
     cralwer = MacroCrawler()
 
 
-    data = cralwer.analyze_vix()
+    data = cralwer.update_putcall_ratio()
 
 
     print("금리_매수매도 신호")
