@@ -3,6 +3,7 @@ import time
 from dateutil.relativedelta import relativedelta
 import pandas as pd
 import numpy as np
+from datetime import datetime
 import requests
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
@@ -360,7 +361,7 @@ class MacroCrawler:
         S&P500 지수 조회
         '''
         ticker = '^GSPC'
-        df = yf.download(ticker, start='2000-01-01', interval="1mo", progress=False )
+        df = yf.download(ticker, start='2000-01-01', interval="1d", progress=False )
         # 인덱스를 컬럼으로 변환
         df = df.reset_index()
 
@@ -371,7 +372,7 @@ class MacroCrawler:
         df = df.rename(columns={'Date': 'date', 'Close': 'sp500_close'})
         
         # 월 단위로 맞춰주기 (Period → Timestamp)
-        df['date'] = pd.to_datetime(df['date']).dt.to_period('M').dt.to_timestamp()
+        df['date'] = pd.to_datetime(df['date']) #dt.to_period('M').dt.to_timestamp()
 
         # 필요한 컬럼만 반환
         df = df[['date', 'sp500_close']]
@@ -392,6 +393,7 @@ class MacroCrawler:
 
         df_sp500 = self.get_sp500().copy()
         df_sp500['date'] = pd.to_datetime(df_sp500['date'])  # 혹시 모르니 안전하게
+        df_sp500['date'] =  df_sp500['date'].dt.to_period('M').dt.to_timestamp()
 
         df = pd.merge(df_m2, df_margin[['date', 'margin_debt']], on='date', how='inner')
         df = pd.merge(df, df_sp500, on='date', how='inner')
@@ -1036,6 +1038,7 @@ class MacroCrawler:
 
         # 2. 날짜 정제
         sp500_df["date"] = pd.to_datetime(sp500_df["date"])
+        sp500_df["date"] = sp500_df["date"].dt.to_period('M').dt.to_timestamp()
         fed_df["date"] = pd.to_datetime(fed_df["date"])
         cli_df["date"] = pd.to_datetime(cli_df["date"])
         pmi_df.rename(columns={"Month/Year": "date"}, inplace=True)
@@ -1104,10 +1107,19 @@ class MacroCrawler:
         pmi_df.rename(columns={"Month/Year": "date", "PMI": "pmi"}, inplace=True)
         sp_df = self.get_sp500()
 
+        # ✅ 각 달의 첫 거래일만 추출
+        sp_df['year_month'] = sp_df['date'].dt.to_period('M')
+        sp_monthly_first = sp_df.sort_values('date').groupby('year_month').first().reset_index()
+        
+        # ✅ 날짜를 해당 월의 1일로 바꿔줌
+        sp_monthly_first["date"] = sp_monthly_first["year_month"].dt.to_timestamp()
+        sp_monthly_first = sp_monthly_first[["date", "sp500_close"]]
+
+
         # 병합
         df = fed_df.merge(cli_df, on="date", how="outer")
         df = df.merge(pmi_df, on="date", how="outer")
-        df = df.merge(sp_df, on="date", how="outer")
+        df = df.merge(sp_monthly_first, on="date", how="outer")
         df = df.sort_values("date").reset_index(drop=True)
 
         # 1. rate_hike 발생 시점 목록
@@ -1454,15 +1466,338 @@ class MacroCrawler:
 
         return "\n".join(result)
 
+    def get_nfci(self):
+        '''
+        FED가 발표하는 지표를 공식적으로 FRED에 제공하는 형태
+        상승시 경기회복/확장 의미, 하락시 경기 둔화/침체 의미
+        '''
+        
+        url = 'https://api.stlouisfed.org/fred/series/observations'
+        params = {
+            'series_id': 'NFCI',
+            'api_key': self.fred_api_key,
+            'file_type': 'json',
+            'observation_start': '2000-01-01'
+        }
+        response = requests.get(url, params=params)
+        data = response.json()
+        df = pd.DataFrame(data['observations'])
+        df['date'] = pd.to_datetime(df['date'])
+        df['NFCI_index'] = pd.to_numeric(df['value'], errors='coerce')
+        
+        return df
 
+    def analyze_nfci(self):
+        '''
+        nfci < -0.5 금융여건 완화
+        nfci > 0.5 금융긴축
+        '''
+        df = self.get_nfci()
+
+        date = df['date'].iloc[-1]
+        nfci_value = df['NFCI_index'].iloc[-1] 
+
+        result = []
+
+        if nfci_value < -0.5:
+            result.append("✅ 유동성 풍부 구간으로 꾸준한 상승 경향")
+        elif nfci_value > 0.5:
+            result.append("🚨 극단적 긴축 구간, 손실 및 높은 변동성")
+        else:
+            result.append("⚖️ 중립 구간")
+
+        return {
+            "date" : date,
+            "value" : nfci_value,
+            "comment" : result
+        }
+
+
+    def get_dollar_index(self): #period="26y"
+        """
+        달러 인덱스 (DXY) 데이터를 yfinance에서 가져와서 DataFrame으로 반환
+        period: '1d', '5d', '1mo', '3mo', '6mo', '1y', etc.
+        """
+        ticker = "DX-Y.NYB"  # yfinance 상 DXY 심볼 (ICE 선물시장용)
+        df = yf.download(ticker, start='2020-01-01', interval="1d", progress=False)
+        df = df.reset_index()
+
+        # 컬럼 정리 : 컬럼 이름을 표준화
+        df = df[['Date', 'Close']].rename(columns={'Date': 'date', 'Close': 'dxy'})
+        df['date'] = pd.to_datetime(df['date'])
+        return df
+    
+
+    def get_high_yield_spread(self):
+        url = 'https://api.stlouisfed.org/fred/series/observations'
+        params = {
+            'series_id': 'BAMLH0A0HYM2',  # 하이일드 스프레드
+            'api_key': self.fred_api_key,
+            'file_type': 'json',
+            'observation_start': '2000-01-01'
+        }
+        response = requests.get(url, params=params)
+        data = response.json()
+        df = pd.DataFrame(data['observations'])
+        df['date'] = pd.to_datetime(df['date'])
+        df['value'] = pd.to_numeric(df['value'], errors='coerce')
+        return df
+    
+
+    def check_high_yield_spread_warning(self):
+        """
+        하이일드 스프레드 데이터프레임을 받아
+        최신값과 전일 대비 변화율을 체크해 경고를 출력하는 함수
+        """
+        df = self.get_high_yield_spread()
+        df = df.dropna(subset=['value'])  # NaN 제거
+        df = df.sort_values('date')       # 날짜순 정렬
+        
+        today_row = df.iloc[-1]
+        date = today_row["date"]
+        yesterday_row = df.iloc[-2]
+        
+        today_value = today_row['value']
+        yesterday_value = yesterday_row['value']
+        
+        change = today_value - yesterday_value  # 변화량 (포인트)
+
+        messages = []
+        messages.append(f"🔎 하이일드 스프레드 오늘({today_row['date'].date()}) 값: {today_value:.2f}%")
+        messages.append(f"🔎 어제({yesterday_row['date'].date()}) 대비 변화: {change:+.2f}p")
+        
+        if today_value >= 7:
+            messages.append("🚨 하락장 경고: 하이일드 스프레드가 7%를 넘었습니다!")
+        elif today_value >= 5:
+            messages.append("⚠️ 조정장 경고: 하이일드 스프레드가 5%를 넘었습니다!")
+        
+        if change >= 0.5:
+            messages.append("⚡ 급등 경고: 하루 만에 스프레드가 0.5%p 이상 상승했습니다!")
+        
+        if (today_value < yesterday_value) and (today_value >= 5):
+            messages.append("📈 저점 매수 가능성 신호: 스프레드가 꺾이기 시작했습니다!")
+
+        return {
+            "date" : date,
+            'value' : today_value,
+            'message' : messages
+        }
+
+
+    def get_ma_above_ratio(self):
+
+        url = "https://www.barchart.com/stocks/momentum"
+    
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status() # HTTP 오류가 발생하면 예외 발생
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            ma_50_day = None
+            ma_200_day = None
+
+            # 'Market Average'라는 텍스트를 가진 <h5> 태그를 찾습니다.
+            h5_market_average = soup.find('h5', string='Market Average')
+            
+            market_average_table = None
+            if h5_market_average:
+                # <h5> 태그의 부모 (class="block-title"인 div)를 찾습니다.
+                block_title_div = h5_market_average.find_parent('div', class_='block-title')
+                
+                if block_title_div:
+                    # 'block-title' div의 바로 다음 형제 요소 중에서 'table-wrapper' 클래스를 가진 div를 찾습니다.
+                    table_wrapper = block_title_div.find_next_sibling('div', class_='table-wrapper')
+                    
+                    if table_wrapper:
+                        # 'table-wrapper' 안에서 'table' 태그를 찾습니다.
+                        market_average_table = table_wrapper.find('table')
+                    else:
+                        print("ERROR: 'table-wrapper' div를 찾을 수 없습니다.")
+                else:
+                    print("ERROR: 'Market Average' <h5> 태그의 부모 'block-title' div를 찾을 수 없습니다.")
+            else:
+                print("ERROR: 'Market Average' <h5> 태그를 찾을 수 없습니다.")
+
+
+            if market_average_table:
+                # 테이블 헤더 추출 (첫 번째 행의 th 태그들)
+                header_row = market_average_table.find('tr') # 테이블의 첫 번째 tr
+                if header_row:
+                    headers = [th.get_text(strip=True) for th in header_row.find_all('th')]
+                    # print(f"추출된 헤더: {headers}") # 디버깅용
+
+                    # 테이블의 모든 행(<tr>)을 가져옵니다. tbody가 있든 없든 동작하도록 합니다.
+                    rows_in_table = market_average_table.find_all('tr')
+                    
+                    today_row = None
+                    # 가져온 행들을 순회하며 'Today' 행을 찾습니다.
+                    for row in rows_in_table:
+                        # 첫 번째 td가 'Today'인 경우를 찾습니다.
+                        first_cell = row.find('td', class_='text-left') 
+                        if first_cell and first_cell.get_text(strip=True) == 'Today':
+                            today_row = row
+                            break
+                    
+                    if today_row:
+                        # 'Today' 행의 모든 데이터 셀(td 태그들) 추출
+                        # 첫 번째 td(Today)를 제외한 나머지 td 값들을 가져옵니다.
+                        data_cells = [td.get_text(strip=True) for td in today_row.find_all('td')[1:]] # [1:]로 'Today' 셀 제외
+                        # print(f"Today 행의 데이터: {data_cells}") # 디버깅용
+
+                        # 헤더 인덱스를 사용하여 50-Day MA와 200-Day MA 값 추출
+                        try:
+                            index_50_day_ma_header = headers.index("50-Day MA")
+                            ma_50_day = data_cells[index_50_day_ma_header -1] 
+
+                        except ValueError:
+                            print("헤더에서 '50-Day MA'를 찾을 수 없습니다.")
+                        except IndexError:
+                            print("50-Day MA에 해당하는 데이터가 없습니다. 인덱스 오류.")
+
+                        try:
+                            index_200_day_ma_header = headers.index("200-Day MA")
+                            ma_200_day = data_cells[index_200_day_ma_header -1]
+                        except ValueError:
+                            print("헤더에서 '200-Day MA'를 찾을 수 없습니다.")
+                        except IndexError:
+                            print("200-Day MA에 해당하는 데이터가 없습니다. 인덱스 오류.")
+
+                    else:
+                        print("MARKET AVERAGE 테이블에서 'Today' 행을 찾을 수 없습니다.")
+                else:
+                    print("MARKET AVERAGE 테이블에서 헤더 행(<tr>)을 찾을 수 없습니다.")
+            else:
+                print("MARKET AVERAGE 테이블을 찾을 수 없습니다.")
+
+            return {
+                "date": datetime.today().strftime("%Y-%m-%d"),
+                "50-day MA": ma_50_day,
+                "200-day MA": ma_200_day
+            }
+
+        except requests.exceptions.RequestException as e:
+            print(f"웹 페이지에 접속하는 중 오류 발생: {e}")
+            return None, None
+        except Exception as e:
+            print(f"데이터를 파싱하는 중 오류 발생: {e}")
+            return None, None
+
+
+    def interpret_ma_above_ratio(self):
+        """
+        이평선 상회 비율 해석:
+        - 30% 미만: 매수 추천
+        - 70% 이상: 매도 추천
+        - 단기적: 50일 / 장기적: 200일
+
+        Parameters:
+            result (dict): {'date': 'YYYY-MM-DD', '50-day MA': '62.72%', '200-day MA': '52.33%'}
+
+        Returns:
+            list: 추천 메시지 리스트 (현재 수치 포함)
+        """
+
+        data = self.get_ma_above_ratio()
+        
+        messages = []
+
+        # 50-day MA 해석
+        ma_50 = float(data.get("50-day MA", "0%").replace("%", ""))
+        if ma_50 < 30:
+            messages.append(f"✅ 단기적 매수 추천: 50일 이평선 상회 비율이 {ma_50:.2f}%로 낮습니다.")
+        elif ma_50 >= 70:
+            messages.append(f"🚨 단기적 매도 신호: 50일 이평선 상회 비율이 {ma_50:.2f}%로 과열 구간입니다.")
+
+        # 200-day MA 해석
+        ma_200 = float(data.get("200-day MA", "0%").replace("%", ""))
+        if ma_200 < 30:
+            messages.append(f"✅ 장기적 매수 추천: 200일 이평선 상회 비율이 {ma_200:.2f}%로 낮습니다.")
+        elif ma_200 >= 70:
+            messages.append(f"🚨 장기적 매도 신호: 200일 이평선 상회 비율이 {ma_200:.2f}%로 과열 구간입니다.")
+
+        # 신호 없을 때
+        if not messages:
+            messages.append(f"⚖️ 현재는 뚜렷한 매수/매도 신호가 없습니다. (50일: {ma_50:.2f}%, 200일: {ma_200:.2f}%)")
+
+        return messages
+    
+
+    def analyze_disparity_with_ma(self):
+        """
+        50일, 200일 이동평균 기준 이격도 계산 및 해석
+
+        Returns:
+            dict : {
+                'date': latest_date,
+                'sp500_close': latest_price,
+                '50-day MA': latest_ma_50,
+                '200-day MA': latest_ma_200,
+                '50-day disparity (%)': value,
+                '200-day disparity (%)': value,
+                'short_term_status': 해석 텍스트,
+                'long_term_status': 해석 텍스트
+            }
+        """
+        df = self.get_sp500()
+        df = df.copy()
+        df['MA_50'] = df['sp500_close'].rolling(window=50).mean()
+        df['MA_200'] = df['sp500_close'].rolling(window=200).mean()
+        df.dropna(inplace=True)
+
+        latest = df.iloc[-1]
+        date = latest['date']
+        close = latest['sp500_close']
+        ma_50 = latest['MA_50']
+        ma_200 = latest['MA_200']
+
+        disparity_50 = ((close - ma_50) / ma_50) * 100
+        disparity_200 = ((close - ma_200) / ma_200) * 100
+
+        def interpret_disparity_50(val):
+            if val <= -5:
+                return "📉 단기 침체 구간"
+            elif val <= 5:
+                return "⚖️ 중립 구간"
+            elif val <= 10:
+                return "⚠️ 단기 과열"
+            else:
+                return "🚨 극단적 단기 과열"
+
+        def interpret_disparity_200(val):
+            if val <= -10:
+                return "📉 장기 침체 구간"
+            elif val <= 0:
+                return "⚖️ 장기 중립(약세)"
+            elif val <= 10:
+                return "⚖️ 장기 중립(강세)"
+            elif val <= 20:
+                return "⚠️ 장기 과열"
+            else:
+                return "🔥 광기 구간"
+
+        return {
+            'date': date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else str(date),
+            'sp500_close': round(close, 2),
+            '50-day MA': round(ma_50, 2),
+            '200-day MA': round(ma_200, 2),
+            '50-day disparity (%)': round(disparity_50, 2),
+            '200-day disparity (%)': round(disparity_200, 2),
+            'short_term_status': interpret_disparity_50(disparity_50),
+            'long_term_status': interpret_disparity_200(disparity_200)
+        }
 
 
 if __name__ == "__main__":
     cralwer = MacroCrawler()
 
 
-    data = cralwer.get_bull_bear_spread()
+data = cralwer.generate_buy_signals_from_hike()
 
 
-    print("금리_매수매도 신호")
-    print(data)
+print("금리_매수매도 신호")
+print(data)
