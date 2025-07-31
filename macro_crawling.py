@@ -60,6 +60,7 @@ class MacroCrawler:
         # PUT CALL Ratio 업데이트기 연결
         self.put_call_ratio_updater = PutCallRatioUpdater("put_call_ratio.csv")
 
+    # Clear 1개월 딜레이 데이터
     def get_10years_treasury_yeild(self):
         '''
         FRED API : 미국 10년물 국채 수익률
@@ -91,7 +92,8 @@ class MacroCrawler:
         except Exception as e:
             print(f"[ERROR] FRED API 호출 실패 : {e}")
             return pd.DataFrame()
-        
+
+    # Clear - 1개월 딜레이 데이터    
     def get_2years_treasury_yeild(self):
         url = 'https://api.stlouisfed.org/fred/series/observations'
         params = {
@@ -119,7 +121,8 @@ class MacroCrawler:
         except Exception as e:
             print(f"[ERROR] FRED API 호출 실패 : {e}")
             return pd.DataFrame()
-        
+
+    # Clear - 1개월 딜레이 데이터     
     def get_cpi(self):
         url = 'https://api.stlouisfed.org/fred/series/observations'
         params = {
@@ -163,6 +166,7 @@ class MacroCrawler:
         df['CPI YOY(%)'] = df['value'].pct_change(periods=12)*100 # 12개월 전 대비 변화율
         return df
     
+    # Clear - 1개월 딜레이 데이터  
     def get_m2(self) : 
         url = 'https://api.stlouisfed.org/fred/series/observations'
         params = {
@@ -191,7 +195,7 @@ class MacroCrawler:
         df['m2_yoy'] = df['value'].pct_change(periods=12) * 100
         return df[['date', 'm2_yoy']]
 
-
+    # Clear 1개월 딜레이 데이터
     def update_margin_debt_data(self):
         '''
         로컬에 저장된 margin_debt 파일 불러오기
@@ -264,7 +268,7 @@ class MacroCrawler:
         #     return pd.DataFrame()
 
     
-      
+    # Clear  
     def get_margin_yoy_change(self):
         '''
         마진 부채의 전년 대비 YOY (%) 변화율 계산
@@ -281,8 +285,10 @@ class MacroCrawler:
         df["Margin YoY (%)"] = df["margin_debt"].pct_change(periods=12) * 100
         return df[["Month/Year", "margin_debt", "Margin YoY (%)"]]
 
+
     ## 유동성 관련
-    def generate_zscore_trend_signals(self, df: pd.DataFrame) -> pd.DataFrame:
+    # Clear
+    def generate_zscore_trend_signals(self):
         """
         Margin Debt / M2 비율의 z-score 및 추세 조건 기반 전략
 
@@ -303,7 +309,7 @@ class MacroCrawler:
         Returns:
             DataFrame with signal type, signal date, action date, and 3-month return
         """
-
+        df = self.merge_m2_margin_sp500_abs()
         df = df.sort_values("date").copy()
         df["ratio"] = df["margin_debt"] / df["m2"]
         df["ratio_z"] = (df["ratio"] - df["ratio"].rolling(window=36, min_periods=12).mean()) / \
@@ -338,11 +344,14 @@ class MacroCrawler:
 
         return pd.DataFrame(results)
     
-    def generate_mdyoy_signals(self, df):
+    # Clear
+    def generate_mdyoy_signals(self):
         '''
         Margin Debt YoY 전략 기반 매수/매도 신호 생성 함수 (2개월 발표 지연 반영)
         df : 병합된 데이터프레임(merge_m2_margin_sp500_abs)
         '''
+
+        df = self.merge_m2_margin_sp500_abs()
         df = df.copy()
         df["margin_yoy"] = df["margin_debt"].pct_change(periods=12) * 100
 
@@ -355,7 +364,8 @@ class MacroCrawler:
         df["action_date"] = df["signal_date"] + pd.DateOffset(months=2)
 
         return df
-        
+
+    # Clear - 실시간 데이터
     def get_sp500(self):
         '''
         S&P500 지수 조회
@@ -378,6 +388,7 @@ class MacroCrawler:
         df = df[['date', 'sp500_close']]
         return df
     
+    # Clear
     def merge_m2_margin_sp500_abs(self):
         '''
         M2, margin_debt, S&P500 지수 데이터프레임 병합
@@ -393,24 +404,35 @@ class MacroCrawler:
 
         df_sp500 = self.get_sp500().copy()
         df_sp500['date'] = pd.to_datetime(df_sp500['date'])  # 혹시 모르니 안전하게
-        df_sp500['date'] =  df_sp500['date'].dt.to_period('M').dt.to_timestamp()
+        df_sp500['month'] =  df_sp500['date'].dt.to_period('M').dt.to_timestamp()
+
+        # 각 월의 첫 번째 날짜에 해당하는 S&P500 값만 추출
+        sp_monthly_first = df_sp500.sort_values('date').groupby('month').first().reset_index()
+
+        # ✅ 기존 'date' 컬럼 제거 (중복 방지)
+        sp_monthly_first = sp_monthly_first.drop(columns=['date'])
+        
+        # ✅ 날짜를 해당 월의 1일로 바꿔줌
+        sp_monthly_first = sp_monthly_first.rename(columns={'month': 'date'})
+        sp_monthly_first = sp_monthly_first[["date", "sp500_close"]]
 
         df = pd.merge(df_m2, df_margin[['date', 'margin_debt']], on='date', how='inner')
-        df = pd.merge(df, df_sp500, on='date', how='inner')
+        df = pd.merge(df, sp_monthly_first, on='date', how='inner')
         df["ratio"] = df["margin_debt"] / df["m2"]   # ← 이 줄 추가
         return df
  
-
-    def plot_sp500_with_signals_and_graph(self, df: pd.DataFrame, save_to=None):
+    # Clear
+    def plot_sp500_with_signals_and_graph(self, save_to=None):
         """
         S&P500 종가와 margin_debt/m2 비율 및 매수/매도 신호를 함께 시각화
-        df : 병합된 데이터프레임(generate_mdyoy_signals)
+        df : 병합된 데이터프레임(merge_m2_margin_sp500_abs)
         - 좌측 y축: S&P500
         - 우측 y축: margin_debt / m2 비율
         - 매수 시점: 초록색 ▲
         - 매도 시점: 빨간색 ▼
         """
 
+        df = self.merge_m2_margin_sp500_abs()
         # 비율 및 신호 계산
         df = df.copy()
         df["ratio"] = df["margin_debt"] / df["m2"]
@@ -457,13 +479,13 @@ class MacroCrawler:
             plt.show()
     
 
-
-    def plot_sp500_with_mdyoy_signals_and_graph(self, df, save_to=None):
+    # Clear
+    def plot_sp500_with_mdyoy_signals_and_graph(self, save_to=None):
         '''
         S&P500, Margin Debt / M2, YoY 전략 기반 매수/매도 시점 시각화
-        df : 병합된 데이터프레임(merge_m2_margin_sp500_abs)
+        df : 병합된 데이터프레임(generate_mdyoy_signals)
         '''
-        import matplotlib.pyplot as plt
+        df = self.generate_mdyoy_signals()
 
         fig, ax1 = plt.subplots(figsize=(14, 6))
 
@@ -498,6 +520,7 @@ class MacroCrawler:
         else:
             plt.show()
 
+    # Clear
     def check_today_md_signal(self):
         """
         오늘이 generate_zscore_trend_signals 또는 generate_mdyoy_signals 기준
@@ -517,12 +540,12 @@ class MacroCrawler:
         df = self.merge_m2_margin_sp500_abs()
 
         # --- 전략 1: z-score 기반
-        zscore_signal_df = self.generate_zscore_trend_signals(df)
+        zscore_signal_df = self.generate_zscore_trend_signals()
         zscore_signal_df["action_month"] = zscore_signal_df["action_date"].dt.to_period("M")
         zscore_today = zscore_signal_df[zscore_signal_df["action_month"] == today_month]
 
         # --- 전략 2: margin YoY 기반
-        mdyoy_df = self.generate_mdyoy_signals(df)
+        mdyoy_df = self.generate_mdyoy_signals()
         mdyoy_df["action_month"] = mdyoy_df["action_date"].dt.to_period("M")
         mdyoy_today = mdyoy_df[mdyoy_df["action_month"] == today_month]
 
@@ -547,7 +570,7 @@ class MacroCrawler:
         if not signal_found:
             print("\n✅ 이번 달은 매수/매도 진입 시점이 아닙니다.")
 
-
+    # Clear - 월별데이터 - 1개월 지연
     def get_fed_funds_rate(self):
         '''
         미국 기준 금리 계산
@@ -565,7 +588,8 @@ class MacroCrawler:
         df['date'] = pd.to_datetime(df['date'])
         df['fed_funds_rate'] = pd.to_numeric(df['value'], errors='coerce')
         return df
-    
+
+    # Clear    
     def generate_fed_rate_turning_points(self):
         """
         기준금리 변화에서 인하 시작점 (rate_cut=True), 인상 시작점 (rate_hike=True)만 잡는 함수
@@ -588,6 +612,7 @@ class MacroCrawler:
 
         return df[["date", "fed_funds_rate", "rate_cut", "rate_hike"]]
 
+    # Clear
     def get_rate_signal(self):
         '''
         금리 기반 보조 지표 시그널 계산
@@ -669,6 +694,7 @@ class MacroCrawler:
 
         return signal, comments
 
+    # Clear
     def plot_rate_indicators_vs_sp500(self):
         # 데이터 준비
         sp500 = self.get_sp500()
@@ -678,14 +704,28 @@ class MacroCrawler:
         fed = self.get_fed_funds_rate()
 
         # 월 단위 정렬
-        sp500['date'] = pd.to_datetime(sp500['date']).dt.to_period('M').dt.to_timestamp()
+      
+        sp500['date'] = pd.to_datetime(sp500['date'])  # 혹시 모르니 안전하게
+        sp500['month'] = pd.to_datetime(sp500['date']).dt.to_period('M').dt.to_timestamp()
+
+        # 각 월의 첫 번째 날짜에 해당하는 S&P500 값만 추출
+        sp_monthly_first = sp500.sort_values('date').groupby('month').first().reset_index()
+
+        # ✅ 기존 'date' 컬럼 제거 (중복 방지)
+        sp_monthly_first = sp_monthly_first.drop(columns=['date'])
+        
+        # ✅ 날짜를 해당 월의 1일로 바꿔줌
+        sp_monthly_first = sp_monthly_first.rename(columns={'month': 'date'})
+        sp_monthly_first = sp_monthly_first[["date", "sp500_close"]]
+
+
         df_10y['date'] = df_10y['date'].dt.to_period('M').dt.to_timestamp()
         df_2y['date'] = df_2y['date'].dt.to_period('M').dt.to_timestamp()
         cpi_yoy['date'] = cpi_yoy['date'].dt.to_period('M').dt.to_timestamp()
         fed['date'] = fed['date'].dt.to_period('M').dt.to_timestamp()
 
         # 병합
-        df = sp500.copy()
+        df = sp_monthly_first.copy()
         df = df.merge(df_10y[['date', 'value']], on='date', how='inner').rename(columns={'value': '10y'})
         df = df.merge(df_2y[['date', 'value']], on='date', how='inner').rename(columns={'value': '2y'})
         df = df.merge(cpi_yoy[['date', 'CPI YOY(%)']], on='date', how='inner').rename(columns={'CPI YOY(%)': 'cpi_yoy'})
@@ -731,6 +771,7 @@ class MacroCrawler:
         plt.tight_layout()
         plt.show()
 
+    # Clear
     def plot_rate_indicators_vs_sp500_with_signal(self):
         # 데이터 준비
         sp500 = self.get_sp500()
@@ -739,12 +780,28 @@ class MacroCrawler:
         cpi_yoy = self.get_cpi_yoy()
         fed = self.get_fed_funds_rate()
 
+        # 월 단위 정렬
+      
+        sp500['date'] = pd.to_datetime(sp500['date'])  # 혹시 모르니 안전하게
+        sp500['month'] = pd.to_datetime(sp500['date']).dt.to_period('M').dt.to_timestamp()
+
+        # 각 월의 첫 번째 날짜에 해당하는 S&P500 값만 추출
+        sp_monthly_first = sp500.sort_values('date').groupby('month').first().reset_index()
+
+        # ✅ 기존 'date' 컬럼 제거 (중복 방지)
+        sp_monthly_first = sp_monthly_first.drop(columns=['date'])
+        
+        # ✅ 날짜를 해당 월의 1일로 바꿔줌
+        sp_monthly_first = sp_monthly_first.rename(columns={'month': 'date'})
+        sp_monthly_first = sp_monthly_first[["date", "sp500_close"]]
+
+
         # 날짜 처리
-        for df in [sp500, df_10y, df_2y, cpi_yoy, fed]:
+        for df in [df_10y, df_2y, cpi_yoy, fed]:
             df['date'] = pd.to_datetime(df['date']).dt.to_period('M').dt.to_timestamp()
 
         # 병합
-        df = sp500.copy()
+        df = sp_monthly_first.copy()
         df = df.merge(df_10y[['date', 'value']], on='date').rename(columns={'value': '10y'})
         df = df.merge(df_2y[['date', 'value']], on='date').rename(columns={'value': '2y'})
         df = df.merge(cpi_yoy[['date', 'CPI YOY(%)']], on='date').rename(columns={'CPI YOY(%)': 'cpi_yoy'})
@@ -888,6 +945,7 @@ class MacroCrawler:
 
         return result    
 
+    # Clear
     def get_unemployment_rate(self):
         url = 'https://api.stlouisfed.org/fred/series/observations'
         params = {
@@ -952,6 +1010,7 @@ class MacroCrawler:
 
         raise Exception("❌ 'ISM 제조업 PMI' 항목을 찾을 수 없습니다.")
     
+    # Clear - 월별 데이터 - 1개월 지연
     def update_ism_pmi_data(self):
         '''
         로컬에 저장된 ism_pmi 파일 불러오기
@@ -963,6 +1022,7 @@ class MacroCrawler:
             print("📛 ISM PMI data 업데이트 실패:", e)
         return pmi_df
 
+    # Clear - 월별데이터 - 2개월 지연
     def get_UMCSENT_index(self):
         '''
         미시간 소비자 심리지수
@@ -987,6 +1047,7 @@ class MacroCrawler:
   
         return df 
 
+    # Clear - 월별데이터
     def get_CLI(self):
         '''
         CLI가 발표하는 지표를 공식적으로 FRED에 제공하는 형태
@@ -1038,14 +1099,26 @@ class MacroCrawler:
 
         # 2. 날짜 정제
         sp500_df["date"] = pd.to_datetime(sp500_df["date"])
-        sp500_df["date"] = sp500_df["date"].dt.to_period('M').dt.to_timestamp()
+        sp500_df['month'] = pd.to_datetime(sp500_df['date']).dt.to_period('M').dt.to_timestamp()
+
+        # 각 월의 첫 번째 날짜에 해당하는 S&P500 값만 추출
+        sp_monthly_first = sp500_df.sort_values('date').groupby('month').first().reset_index()
+
+        # ✅ 기존 'date' 컬럼 제거 (중복 방지)
+        sp_monthly_first = sp_monthly_first.drop(columns=['date'])
+        
+        # ✅ 날짜를 해당 월의 1일로 바꿔줌
+        sp_monthly_first = sp_monthly_first.rename(columns={'month': 'date'})
+        sp_monthly_first = sp_monthly_first[["date", "sp500_close"]]
+
+
         fed_df["date"] = pd.to_datetime(fed_df["date"])
         cli_df["date"] = pd.to_datetime(cli_df["date"])
         pmi_df.rename(columns={"Month/Year": "date"}, inplace=True)
         pmi_df["date"] = pd.to_datetime(pmi_df["date"])
 
         # 3. 모든 데이터 병합 (outer merge → date 기준)
-        df = sp500_df.merge(cli_df, on="date", how="outer")
+        df = sp_monthly_first.merge(cli_df, on="date", how="outer")
         df = df.merge(pmi_df, on="date", how="outer")
         df = df.merge(fed_df[["date", "rate_cut"]], on="date", how="left")
 
@@ -1065,6 +1138,7 @@ class MacroCrawler:
 
         return df
 
+    # Clear
     def plot_sp500_with_sell_signals(self, save_to = None):
 
         signal_df = self.generate_rate_cut_signals()
@@ -1090,7 +1164,7 @@ class MacroCrawler:
         else:
             plt.show()
 
-
+    # Clear
     def generate_buy_signals_from_hike(self):
 
         """
@@ -1136,7 +1210,7 @@ class MacroCrawler:
 
         return df[["date", "fed_funds_rate", "rate_hike", "CLI_index", "pmi", "sp500_close", "buy_signal"]]
 
-
+    # Clear
     def plot_buy_signals_from_hike(self, save_to = None):
         """
         generate_buy_signals_from_hike() 결과를 바탕으로
@@ -1796,7 +1870,7 @@ if __name__ == "__main__":
     cralwer = MacroCrawler()
 
 
-data = cralwer.generate_buy_signals_from_hike()
+data = cralwer.check_put_call_ratio_warning()
 
 
 print("금리_매수매도 신호")

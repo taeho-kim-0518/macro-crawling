@@ -99,7 +99,7 @@ class PutCallRatioUpdater:
         if index_value and date:
             return {
                 "date": date,
-                "equity_value": index_value
+                "index_value": index_value
             }
         else:
             raise ValueError("❌ Last Value 또는 Last Period를 찾을 수 없습니다.")
@@ -130,8 +130,8 @@ class PutCallRatioUpdater:
         # 새 행 추가
         new_row = pd.DataFrame([{
             "date": parsed_date,
-            "equity_value": float(equity_df["value"]),
-            "index_value": float(index_df["value"])
+            "equity_value": float(equity_df["equity_value"]),
+            "index_value": float(index_df["index_value"])
         }])
 
         updated_df = pd.concat([self.df, new_row], ignore_index=True)
@@ -144,4 +144,5 @@ class PutCallRatioUpdater:
 if __name__ == "__main__":
     update = PutCallRatioUpdater()
 
-    update.update_csv()
+    result = update.update_csv()
+    print(result)
