@@ -29,6 +29,7 @@ from md_updater import MarginDebtUpdater
 from ism_pmi_updater import ISMPMIUpdater
 from SNP_forward_pe_updater import forwardpe_updater
 from putcall_ratio_updater import PutCallRatioUpdater
+from bullbear_spread_updater import BullBearSpreadUpdater
 
 # 한글 폰트 설정 (Windows에서는 기본적으로 'Malgun Gothic' 가능)
 mpl.rcParams['font.family'] = 'Malgun Gothic'  # 또는 'NanumGothic', 'AppleGothic' (Mac)
@@ -59,6 +60,8 @@ class MacroCrawler:
         self.snp_forwardpe_updater = forwardpe_updater("forward_pe_data.csv")
         # PUT CALL Ratio 업데이트기 연결
         self.put_call_ratio_updater = PutCallRatioUpdater("put_call_ratio.csv")
+        # Bull Bear Spread 업데이트기 연결
+        self.bull_bear_spread_updater = BullBearSpreadUpdater("bull_bear_spread.csv")
 
     # Clear 1개월 딜레이 데이터
     def get_10years_treasury_yeild(self):
@@ -386,6 +389,7 @@ class MacroCrawler:
 
         # 필요한 컬럼만 반환
         df = df[['date', 'sp500_close']]
+        df.to_csv("sp500.csv", encoding='utf-8-sig')
         return df
     
     # Clear
@@ -945,7 +949,7 @@ class MacroCrawler:
 
         return result    
 
-    # Clear
+    # Clear - 월별데이터 - 1개월 지연
     def get_unemployment_rate(self):
         url = 'https://api.stlouisfed.org/fred/series/observations'
         params = {
@@ -1047,6 +1051,135 @@ class MacroCrawler:
   
         return df 
 
+    # 미국 선행 지수 - 월별데이터
+    def get_us_leading_index_actual(self):
+        """
+        TradingEconomics 웹 페이지에서 미국 선행 지수의 실제값을 가져옵니다.
+
+        Args:
+            url (str): 데이터를 가져올 TradingEconomics 페이지의 URL.
+
+        Returns:
+            str: 실제값 (예: '98.80') 또는 찾을 수 없는 경우 None.
+        """
+
+        url = "https://ko.tradingeconomics.com/united-states/leading-economic-index"
+    
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        
+        extracted_data = []
+
+        try:
+            # 웹 페이지에 GET 요청 보내기
+            print(f"URL에 접속 중: {url}")
+            response = requests.get(url, headers=headers)
+            response.raise_for_status() # HTTP 오류가 발생하면 예외 발생
+
+            # BeautifulSoup으로 HTML 파싱
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            # 'ctl00_ContentPlaceHolder1_ctl00_ctl00_PanelPeers' ID를 가진 div를 찾습니다.
+            panel_peers_div = soup.find('div', id='ctl00_ContentPlaceHolder1_ctl00_ctl00_PanelPeers')
+            
+            if panel_peers_div:
+                # 해당 div 안에서 'table-responsive' 클래스를 가진 div를 찾고 그 안의 'table table-hover' 테이블을 찾습니다.
+                table_responsive_div = panel_peers_div.find('div', class_='table-responsive')
+                if table_responsive_div:
+                    data_table = table_responsive_div.find('table', class_='table table-hover')
+                    
+                    if data_table:
+                        # 테이블 헤더 추출
+                        header_row = data_table.find('thead').find('tr')
+                        if header_row:
+                            headers = [th.get_text(strip=True) for th in header_row.find_all('th')]
+                            # 첫 번째 빈 헤더 제거
+                            if headers and headers[0] == '':
+                                headers = headers[1:]
+                            print(f"추출된 헤더: {headers}") # 디버깅용
+
+                            # '마지막'과 '참고' 열의 인덱스 찾기
+                            try:
+                                last_index = headers.index("마지막")
+                                ref_date_index = headers.index("참고")
+                            except ValueError as e:
+                                print(f"ERROR: 필요한 헤더('마지막' 또는 '참고')를 찾을 수 없습니다: {e}")
+                                return []
+
+                            # 데이터 행 순회: tbody 유무와 상관없이 테이블 내의 모든 <tr>을 찾고, 헤더 다음 행부터 데이터로 처리
+                            all_table_rows = data_table.find_all('tr')
+                            
+                            # 헤더 행 다음부터 실제 데이터 행으로 간주
+                            # 헤더가 <thead> 안에 있고, 데이터는 <tbody> 안에 명시될 수도 있지만,
+                            # <tbody>가 없는 경우 <tr>이 <table> 바로 아래에 올 수 있음.
+                            # 따라서 thead 안의 tr을 제외한 나머지 tr을 가져옵니다.
+                            data_rows = [row for row in all_table_rows if row.find_parent('thead') is None]
+
+                            if data_rows:
+                                for row in data_rows:
+                                    # 첫 번째 td는 지표 이름이므로 따로 처리
+                                    indicator_name_tag = row.find('td', style="padding-left: 10px; text-align: left;")
+                                    indicator_name = indicator_name_tag.get_text(strip=True) if indicator_name_tag else "N/A"
+
+                                    # 지표 이름 셀을 제외한 나머지 셀에서 값을 추출합니다.
+                                    data_cells_excluding_indicator_name = row.find_all('td')[1:] 
+                                    processed_data_cells = [cell.get_text(strip=True) for cell in data_cells_excluding_indicator_name]
+
+                                    last_value = None
+                                    ref_date = None
+
+                                    # 추출된 헤더의 인덱스에 따라 값을 가져옵니다.
+                                    if last_index < len(processed_data_cells):
+                                        last_value = processed_data_cells[last_index]
+                                    if ref_date_index < len(processed_data_cells):
+                                        ref_date = processed_data_cells[ref_date_index]
+                                    
+                                    extracted_data.append({
+                                        "indicator": indicator_name,
+                                        "value": last_value,
+                                        "date": ref_date
+                                    })
+                            else:
+                                print("ERROR: 테이블에서 데이터 행(<tr>)을 찾을 수 없습니다.")
+                        else:
+                            print("ERROR: 테이블 헤더 행(<thead><tr>)을 찾을 수 없습니다.")
+                    else:
+                        print("ERROR: 'table table-hover' 클래스를 가진 테이블을 찾을 수 없습니다.")
+                else:
+                    print("ERROR: 'table-responsive' div를 찾을 수 없습니다.")
+            else:
+                print("ERROR: 'ctl00_ContentPlaceHolder1_ctl00_ctl00_PanelPeers' ID를 가진 div를 찾을 수 없습니다.")
+
+        except requests.exceptions.RequestException as e:
+            print(f"웹 페이지에 접속하는 중 오류 발생: {e}")
+        except Exception as e:
+            print(f"데이터를 파싱하는 중 오류 발생: {e}")
+        
+        return extracted_data[0]
+
+   # Clear - 월별데이터(ECRI)
+    def get_USSLIND(self):
+        '''
+        St. Louis Fed가 발표하는 지표를 공식적으로 FRED에 제공하는 형태
+        상승시 경기회복/확장 의미, 하락시 경기 둔화/침체 의미
+        '''
+        
+        url = 'https://api.stlouisfed.org/fred/series/observations'
+        params = {
+            'series_id': 'USSLIND',
+            'api_key': self.fred_api_key,
+            'file_type': 'json',
+            'observation_start': '2000-01-01'
+        }
+        response = requests.get(url, params=params)
+        data = response.json()
+        df = pd.DataFrame(data['observations'])
+        df['date'] = pd.to_datetime(df['date'])
+        df['LI_index'] = pd.to_numeric(df['value'], errors='coerce')
+        
+        return df
+    
     # Clear - 월별데이터
     def get_CLI(self):
         '''
@@ -1237,6 +1370,100 @@ class MacroCrawler:
             plt.close(fig)
         else:
             plt.show()
+
+
+    def find_signals_from_erci_indicators(self):
+        """
+        실업률과 ERCI(USSLIND) 지표 발표 지연을 고려하여 조건 충족 시점을 찾는 함수
+
+        매수 조건: 실업률 > 평균, ECRI < 95
+        매도 조건: 실업률 < 평균, ECRI >= 110
+
+        Returns:
+            signal_df : 매수/매도 시점과 조건 정보를 포함한 DataFrame
+        """
+        from pandas.tseries.offsets import MonthBegin
+        import pandas as pd
+
+        # 데이터 불러오기
+        ecri_df = self.get_USSLIND()  # 'LI_index' 또는 'value', 'date' 포함
+        unemp_df = self.get_unemployment_rate()  # 'unemployment_rate' 또는 'value', 'date' 포함
+
+        # date 컬럼이 있으면 인덱스로 지정 + datetime 변환
+        if "date" in ecri_df.columns:
+            ecri_df["date"] = pd.to_datetime(ecri_df["date"])
+            ecri_df = ecri_df.set_index("date")
+
+        if "date" in unemp_df.columns:
+            unemp_df["date"] = pd.to_datetime(unemp_df["date"])
+            unemp_df = unemp_df.set_index("date")
+
+        # 필요한 컬럼 선택 및 이름 지정
+        ecri_series = ecri_df["LI_index"] if "LI_index" in ecri_df.columns else ecri_df["value"]
+        ecri_series.name = "ECRI"
+
+        unemp_series = unemp_df["unemployment_rate"] if "unemployment_rate" in unemp_df.columns else unemp_df["value"]
+        unemp_series.name = "Unemployment"
+
+        # 1개월 발표 지연 적용
+        ecri_shifted = ecri_series.shift(1)
+        ecri_shifted.index = ecri_shifted.index + MonthBegin(1)
+
+        unemp_shifted = unemp_series.shift(1)
+        unemp_shifted.index = unemp_shifted.index + MonthBegin(1)
+
+
+        # 병합 후 조건 적용
+        cond_df = pd.concat([ecri_shifted, unemp_shifted], axis=1).dropna()
+        print("📆 병합 cond_df 마지막 날짜:", cond_df.index.max())
+
+        unemp_mean = cond_df["Unemployment"].mean()
+        print("실업률 평균:", cond_df["Unemployment"].mean())
+
+        buy_signals = cond_df[(cond_df["Unemployment"] > unemp_mean) & (cond_df["ECRI"] < 0.95)].copy()
+        buy_signals["signal"] = "buy"
+
+        sell_signals = cond_df[(cond_df["Unemployment"] < unemp_mean) & (cond_df["ECRI"] >= 1.10)].copy()
+        sell_signals["signal"] = "sell"
+
+        signal_df = pd.concat([buy_signals, sell_signals]).sort_index()
+        return signal_df
+    
+    def plot_sp500_with_ERCI_signals(self):
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        sns.set_style("whitegrid")
+
+        sp500 = self.get_sp500().copy()
+        # "date" 컬럼이 존재한다면, 이걸 datetime으로 변환 후 인덱스로 설정
+        sp500["date"] = pd.to_datetime(sp500["date"])
+        sp500 = sp500.set_index("date")
+        sp500 = sp500.sort_index()
+
+        # 시그널 데이터 정렬
+        signal_df = self.find_signals_from_erci_indicators()
+        signal_df = signal_df.sort_index()
+
+        fig, ax = plt.subplots(figsize=(14, 6))
+        ax.plot(sp500.index, sp500["sp500_close"], label="S&P500", color="black")
+
+        # 각 시그널 날짜에 가까운 S&P500 종가 위에 마커 표시
+        for date, row in signal_df.iterrows():
+            # 해당 날짜 이후의 첫 S&P500 종가 찾기
+            nearest = sp500[sp500.index >= date]
+            if not nearest.empty:
+                y = nearest.iloc[0]["sp500_close"]
+                if row["signal"] == "buy":
+                    ax.scatter(date, y, color="green", marker="^", s=100, label="Buy" if "Buy" not in ax.get_legend_handles_labels()[1] else "")
+                elif row["signal"] == "sell":
+                    ax.scatter(date, y, color="red", marker="v", s=100, label="Sell" if "Sell" not in ax.get_legend_handles_labels()[1] else "")
+
+        ax.set_title("S&P500 with Buy/Sell Signals (Monthly signal date)", fontsize=14)
+        ax.set_ylabel("S&P500 Index")
+        ax.legend()
+        plt.tight_layout()
+        plt.show()
+
 
 
     def update_snp_forwardpe_data(self):
@@ -1866,11 +2093,93 @@ class MacroCrawler:
         }
 
 
+      # Clear 주별 데이터 - 1주일 딜레이
+    def update_bull_bear_spread(self):
+        '''
+        로컬에 저장된 bull_bear_spread 파일 불러오기
+        '''
+        try:
+            bb_spread = self.bull_bear_spread_updater.update_csv()
+            print("✅ Bull Bear Spread CSV 업데이트 완료")
+        except Exception as e:
+            print("📛 Bull Bear Spread 업데이트 실패:", e)
+        return bb_spread
+
+
+    def get_bull_bear_spread(self):
+
+        url = "https://ycharts.com/indicators/us_investor_sentiment_bull_bear_spread"
+
+        options = Options()
+        options.add_argument("--headless")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
+
+        driver = webdriver.Chrome(options=options)
+        driver.get(url)
+        time.sleep(5)  # JS 로딩 대기
+
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        driver.quit()
+
+        # "Last Value" 텍스트가 있는 td 찾기
+        for td in soup.select("td.col-6"):
+            if "Last Value" in td.get_text(strip=True):
+                value_td = td.find_next_sibling("td")
+                if value_td:
+                    bull_bear_spread = value_td.get_text(strip=True)
+                    break
+
+        # ✅ Last Period (날짜) 추출 - tr 기반으로 따로 탐색
+        for row in soup.find_all("tr"):
+            tds = row.find_all("td")
+            if len(tds) == 2 and "Latest Period" in tds[0].get_text(strip=True):
+                date = tds[1].get_text(strip=True)
+                break
+
+        if bull_bear_spread and date:
+            return {
+                "date": date,
+                "spread": bull_bear_spread
+            }
+        else:
+            raise ValueError("❌ Last Value 또는 Last Period를 찾을 수 없습니다.")
+        
+
+    def generate_bull_bear_signals(self):
+        """
+        Bull-Bear Spread 기준 투자 전략
+
+        매수: spread < -20
+        매도: spread > 40
+        """
+        df = self.update_bull_bear_spread()
+        df = df.copy()
+        df_latest = df.iloc[-1]
+        df_latest["buy_signal"] = df_latest["spread"] < -0.2
+        df_latest["sell_signal"] = df_latest["spread"] > 0.4
+
+        result = []
+
+        if df_latest['sell_signal'] == True:
+            result.append("🔥 광기 구간(투자자들이 지나치게 낙관적)")
+        elif df_latest['buy_signal'] == True:
+            result.append("✅ 역발상 매수 기회(투자자들이 공포를 느낌)")
+        else:
+            result.append("⚖️ 판단 유보(시장 혼조 또는 무관심)")
+       
+        return {
+            'date' : df_latest['date'],
+            'spread' : df_latest['spread'],
+            'comment' : result
+
+        }
+
 if __name__ == "__main__":
     cralwer = MacroCrawler()
 
 
-data = cralwer.check_put_call_ratio_warning()
+data = cralwer.plot_sp500_with_ERCI_signals()
 
 
 print("금리_매수매도 신호")
