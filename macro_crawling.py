@@ -1828,6 +1828,138 @@ class MacroCrawler:
         df['date'] = pd.to_datetime(df['date'])
         return df
     
+    # Clear - 실시간 데이터
+    def get_euro_index(self):
+        '''
+        FRED API : 유로 인덱스
+        '''
+
+        url = 'https://api.stlouisfed.org/fred/series/observations'
+        params = {
+            'series_id' : 'DEXUSEU', # 10년물 국채 금리
+            'api_key' : self.fred_api_key,
+            'file_type' : 'json',
+            'observation_start' : '2000-01-01' # 시작일(원하는 날짜짜)
+        }
+
+        try:
+            response = requests.get(url, params= params, timeout=10)
+            response.raise_for_status() # HTTP 에러 발생 시 예외 처리
+            data = response.json()
+
+            if 'observations' not in data:
+                raise ValueError(F"'observations' 키가 없음 : {data}")
+
+            # 데이터프레임 변환
+            df = pd.DataFrame(data['observations'])
+            df['date'] = pd.to_datetime(df['date'])
+            df['value'] = pd.to_numeric(df['value'], errors= 'coerce')
+
+            return df
+        
+        except Exception as e:
+            print(f"[ERROR] FRED API 호출 실패 : {e}")
+            return pd.DataFrame()
+        
+    # Clear - 실시간 데이터
+    def get_yen_index(self):
+        '''
+        FRED API : 엔화 인덱스
+        '''
+
+        url = 'https://api.stlouisfed.org/fred/series/observations'
+        params = {
+            'series_id' : 'DEXJPUS', # 10년물 국채 금리
+            'api_key' : self.fred_api_key,
+            'file_type' : 'json',
+            'observation_start' : '2000-01-01' # 시작일(원하는 날짜짜)
+        }
+
+        try:
+            response = requests.get(url, params= params, timeout=10)
+            response.raise_for_status() # HTTP 에러 발생 시 예외 처리
+            data = response.json()
+
+            if 'observations' not in data:
+                raise ValueError(F"'observations' 키가 없음 : {data}")
+
+            # 데이터프레임 변환
+            df = pd.DataFrame(data['observations'])
+            df['date'] = pd.to_datetime(df['date'])
+            df['value'] = pd.to_numeric(df['value'], errors= 'coerce')
+
+            return df
+        
+        except Exception as e:
+            print(f"[ERROR] FRED API 호출 실패 : {e}")
+            return pd.DataFrame()
+    
+
+    # Clear - 월별 데이터 - 1월 딜레이
+    def get_copper_price(self):
+        '''
+        FRED API : 구리 인덱스
+        '''
+
+        url = 'https://api.stlouisfed.org/fred/series/observations'
+        params = {
+            'series_id' : 'PCOPPUSDM', # 10년물 국채 금리
+            'api_key' : self.fred_api_key,
+            'file_type' : 'json',
+            'observation_start' : '2000-01-01' # 시작일(원하는 날짜짜)
+        }
+
+        try:
+            response = requests.get(url, params= params, timeout=10)
+            response.raise_for_status() # HTTP 에러 발생 시 예외 처리
+            data = response.json()
+
+            if 'observations' not in data:
+                raise ValueError(F"'observations' 키가 없음 : {data}")
+
+            # 데이터프레임 변환
+            df = pd.DataFrame(data['observations'])
+            df['date'] = pd.to_datetime(df['date'])
+            df['value'] = pd.to_numeric(df['value'], errors= 'coerce')
+
+            return df
+        
+        except Exception as e:
+            print(f"[ERROR] FRED API 호출 실패 : {e}")
+            return pd.DataFrame()
+    
+
+    def get_gold_price(self):
+        '''
+        FRED API : 금 인덱스
+        '''
+
+        url = 'https://api.stlouisfed.org/fred/series/observations'
+        params = {
+            'series_id' : 'IR14270', # 뉴욕 기준 금가격
+            'api_key' : self.fred_api_key,
+            'file_type' : 'json',
+            'observation_start' : '2000-01-01' # 시작일(원하는 날짜짜)
+        }
+
+        try:
+            response = requests.get(url, params= params, timeout=10)
+            response.raise_for_status() # HTTP 에러 발생 시 예외 처리
+            data = response.json()
+
+            if 'observations' not in data:
+                raise ValueError(F"'observations' 키가 없음 : {data}")
+
+            # 데이터프레임 변환
+            df = pd.DataFrame(data['observations'])
+            df['date'] = pd.to_datetime(df['date'])
+            df['value'] = pd.to_numeric(df['value'], errors= 'coerce')
+
+            return df
+        
+        except Exception as e:
+            print(f"[ERROR] FRED API 호출 실패 : {e}")
+            return pd.DataFrame()
 
     def get_high_yield_spread(self):
         url = 'https://api.stlouisfed.org/fred/series/observations'
@@ -2176,11 +2308,14 @@ class MacroCrawler:
         }
 
 if __name__ == "__main__":
-    cralwer = MacroCrawler()
+    crawler = MacroCrawler()
 
 
-data = cralwer.plot_sp500_with_ERCI_signals()
+md_data = crawler.update_margin_debt_data()
+pmi_data = crawler.update_ism_pmi_data()
+fp_data = crawler.update_snp_forwardpe_data()
+pc_data = crawler.update_putcall_ratio()
+bb_data = crawler.update_bull_bear_spread()
 
-
-print("금리_매수매도 신호")
+data = crawler.get_yen_index()
 print(data)
