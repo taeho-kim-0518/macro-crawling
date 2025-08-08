@@ -10,21 +10,22 @@ from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 
 
+
 class ISMPMIUpdater:
-    def __init__(self, csv_path="ism_pmi_data.csv"):
+    def __init__(self, csv_path="pmi_data.csv"):
         self.csv_path = csv_path
         try:
-            self.df = pd.read_csv(self.csv_path, parse_dates=["발표일"], encoding='CP949')
+            self.df = pd.read_csv(self.csv_path, parse_dates=["Month/Year"], encoding='CP949')
+            # self.df.columns = self.df.columns.str.strip()
+            # self.df.columns = self.df.columns.str.replace('\ufeff', '', regex=False)
+            print("PMI DATA", self.df)
             print("✅ ISM PMI CSV 불러오기 성공")
         
         except FileNotFoundError:
             print("⚠️ CSV 파일이 없어 새로 생성합니다.")
             self.df = pd.DataFrame(columns=[
-                "발표일",
-                "시간",
-                "실제",
-                "예측",
-                "이전"
+                "Month/Year",
+                "PMI"
             ])
 
     # def load_existing_data(self):
@@ -119,8 +120,8 @@ class ISMPMIUpdater:
                     date = columns[4].get_text(strip=True)
                     return {
                         "지표명": name,
-                        "값": value,
-                        "발표일": date
+                        "발표일": date,
+                        "값": value
                     }
 
         raise Exception("❌ 'ISM 제조업 PMI' 항목을 찾을 수 없습니다.")
@@ -149,7 +150,8 @@ class ISMPMIUpdater:
             return self.df
 
         # 2. 중복 체크
-        processed_df = self.preprocess_raw_csv()
+        processed_df = self.df
+        
         if (processed_df["Month/Year"] == month_year).any():
             print(f"📭 이미 존재하는 PMI 데이터입니다: {month_year.date()}")
             return processed_df
@@ -163,17 +165,20 @@ class ISMPMIUpdater:
 
         # 4. 원본 df에 새 행 추가
         new_row = pd.DataFrame([{
-            "발표일": month_year.strftime("%Y-%m-%d"),
-            "시간": "", "실제": pmi_value, "예측": "", "이전": ""
+            "Month/Year": month_year.strftime("%Y-%m-%d"),
+            "PMI" : pmi_value
         }])
         self.df = pd.concat([self.df, new_row], ignore_index=True)
-        print("저장된 데이터", self.df)
 
-        # 5. 파일 저장
-        self.df.to_csv(self.csv_path, index=False, encoding="cp949")
-        print(f"✅ 새로운 PMI 데이터 저장 완료: {month_year.date()} / {pmi_value}")
 
-        return processed_df
+        # 5. 저장
+        try:
+            self.df.to_csv(self.csv_path, index=False, encoding="CP949")
+            print(f"✅ 새로운 PMI 데이터 저장 완료: {month_year.date()} / {pmi_value}")
+        except Exception as e:
+            print("❌ CSV 저장 중 오류 발생:", e)
+
+        return self.df 
 
         
 

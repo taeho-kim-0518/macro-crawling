@@ -67,7 +67,6 @@ class forwardpe_updater:
 
     def update_forward_pe_csv(self):
         new_df = self.get_forward_pe()
-        print("new_df : ", new_df)
         
         if new_df is None:
             return 
