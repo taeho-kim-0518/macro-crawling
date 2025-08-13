@@ -1,6 +1,7 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 import pandas as pd
+import numpy as np
 import sys
 import os
 
@@ -41,29 +42,79 @@ def draw_yield_chart(df, value_col: str, title: str, color: str):
     return fig
 
 # 📌 시각화 함수 정의
-def draw_abs_chart(df, value_col: str, title: str, color: str, ylabel: str):
+def draw_abs_chart(
+    df, value_col: str, title: str, color: str, ylabel: str,
+    y_pad_ratio: float = 0.08,        # y축 위/아래 여유 비율(8%)
+    y_clamp: tuple | None = None      # (ymin, ymax) 강제 범위가 필요할 때만 사용
+):
+    # 원본 변형 방지
+    df_local = df.copy()
+
+     # 날짜 컬럼 자동 탐지
+    candidates = ['date', 'Date', 'Month/Year', 'month_year', 'MonthYear']
+    date_col = next((c for c in candidates if c in df_local.columns), None)
+    if date_col is None:
+        # datetime/period 타입 자동 감지
+        for c in df_local.columns:
+            if pd.api.types.is_datetime64_any_dtype(df_local[c]) or pd.api.types.is_period_dtype(df_local[c]):
+                date_col = c
+                break
+    if date_col is None:
+        # 이름에 date/month/year 포함된 컬럼 탐색(최후)
+        for c in df_local.columns:
+            lc = c.lower()
+            if 'date' in lc or ('month' in lc and 'year' in lc):
+                date_col = c
+                break
+    if date_col is None:
+        raise KeyError(f"날짜 컬럼을 찾을 수 없습니다. ('date' 또는 'Month/Year' 필요). 현재 컬럼: {list(df_local.columns)}")
+    
+    # 날짜 형 변환
+    if pd.api.types.is_period_dtype(df_local[date_col]):
+        df_local[date_col] = df_local[date_col].dt.to_timestamp()
+    elif not pd.api.types.is_datetime64_any_dtype(df_local[date_col]):
+        df_local[date_col] = pd.to_datetime(df_local[date_col], errors='coerce')
+
     fig, ax = plt.subplots(figsize=(4, 3))
 
-    # 시계열 데이터 그리기
-    ax.plot(df['date'], df[value_col], color=color)
+    # 시계열 라인
+    ax.plot(df_local[date_col], df_local[value_col], color=color)
 
-    # 마지막 값 구하기
-    last_date = df['date'].iloc[-1]
-    last_value = df[value_col].iloc[-1]
-
-    # 마지막 값에 숫자 표기
+    # 마지막 값 라벨(검정)
+    last_date = df_local[date_col].iloc[-1]
+    last_value = df_local[value_col].iloc[-1]
     ax.text(
         last_date, last_value,
-        f"{last_value:,.0f}",  # 천 단위 콤마, 소수점 없이
-        fontsize=13,
-        color=color,
+        f"{last_value:,.0f}",
+        fontsize=20,
+        color='black',
         ha='left',
         va='bottom'
     )
 
+    # === y축 자동 범위 (변화 보이도록) ===
+    series = pd.to_numeric(df[value_col], errors='coerce').dropna()
+    if len(series) > 0:
+        ymin, ymax = float(series.min()), float(series.max())
+
+        # 값이 모두 같은 경우 대비
+        if np.isclose(ymax, ymin):
+            bump = max(1.0, abs(ymax) * 0.02)  # 최소 1, 값의 2%
+            ymin, ymax = ymin - bump, ymax + bump
+
+        pad = (ymax - ymin) * y_pad_ratio
+        auto_ymin, auto_ymax = ymin - pad, ymax + pad
+
+        if y_clamp is not None and all(v is not None for v in y_clamp):
+            ax.set_ylim(y_clamp[0], y_clamp[1])
+        else:
+            ax.set_ylim(auto_ymin, auto_ymax)
+
+    # 타이틀/라벨
     ax.set_title(title)
-    ax.set_ylabel(ylabel)  # ← y축 단위 받아서 표시
+    ax.set_ylabel(ylabel)
     ax.grid(True)
+    fig.tight_layout()
     return fig
 
 # ✅ Streamlit 제목
@@ -210,19 +261,98 @@ with col3:
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.subheader("🟠 Copper Price")
+    st.subheader("🟠 Copper_F")
     st.pyplot(draw_abs_chart(
         copper_price, 'value', 'Copper Price', 'orange', 'Price'
     ))
 
 with col2:
-    st.subheader("🪙 Gold Price")
+    st.subheader("🪙 Gold_F")
     st.pyplot(draw_abs_chart(
         gold_price, 'value', 'Gold Price', 'yellow', 'Price'
     ))
 
 with col3:
-    st.subheader("🛢️ Oil Price")
+    st.subheader("🛢️ Oil_F")
     st.pyplot(draw_abs_chart(
         oil_price, 'value', 'Gold Price', 'black', 'Price'
+    ))
+
+    # ────────────────────────────────
+st.markdown("---")
+st.header("📈 기타 경제 지표")
+
+unemployment_rate = crawler.get_unemployment_rate() # date, unemployment_rate
+pmi_index = crawler.update_ism_pmi_data() # date, PMI
+UMCSENT_index = crawler.get_UMCSENT_index() # date umcsent_index
+
+vix_index = crawler.get_vix_index() # date, vix_index
+put_call_ratio = crawler.update_putcall_ratio() # date, equity_value, index_value 
+ncfi_data = crawler.get_nfci() # date, NFCI_index
+
+high_yeild_spread = crawler.get_high_yield_spread() # date, value
+bull_bear_spread = crawler.update_bull_bear_spread() # date, spread
+
+if __name__ == "__main__" :
+    print("Copper DF", pmi_index)
+
+
+# 🔳 시각화 (1행 3열)
+col1, col2 = st.columns(2)
+with col1:
+    st.subheader("🚨 VIX")
+    st.pyplot(draw_abs_chart(
+        vix_index, 'vix_index', 'VIX', 'green', 'Index'
+    ))
+with col2:
+    st.subheader("🧾 PMI Index")
+    st.pyplot(draw_abs_chart(
+        pmi_index, 'PMI', 'PMI Index', 'orange', 'Index'
+    ))
+
+# 🔳 시각화 (1행 3열)
+col1, col2 = st.columns(2)
+with col1:
+    st.subheader("🧑‍💻 소비자심리")
+    st.pyplot(draw_abs_chart(
+        UMCSENT_index, 'umcsent_index', 'UMCSENT Index', 'blue', 'Index'
+    ))
+
+with col2:
+    st.subheader("🧑‍💻 국제금융지수")
+    st.pyplot(draw_abs_chart(
+        ncfi_data, 'NFCI_index', 'NFCI Index', 'orange', 'Index'
+    ))
+
+
+# 🔳 시각화 (1행 3열)
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("✂️ 실업률")
+    st.pyplot(draw_yield_chart(
+        unemployment_rate, 'unemployment_rate', '실업률', 'green'
+    ))
+
+with col2:
+    st.subheader("🧾 PutCall R")
+    st.pyplot(draw_yield_chart(
+        put_call_ratio, 'equity_value', 'PutCall Ratio', 'blue'
+    ))
+
+
+
+
+    # 🔳 시각화 (1행 3열)
+col1, col2 = st.columns(2)
+with col1:
+    st.subheader("📉 하이일드 SP")
+    st.pyplot(draw_yield_chart(
+        high_yeild_spread, 'value', '하이일드 스프레드', 'blue'
+    ))
+
+with col2:
+    st.subheader("⏳ Bull-Bear")
+    st.pyplot(draw_yield_chart(
+        bull_bear_spread, 'spread', 'Bull_Bear 스프레드', 'purple'
     ))

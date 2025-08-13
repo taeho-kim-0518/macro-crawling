@@ -481,7 +481,8 @@ class MacroCrawler:
             plt.close(fig)
         else:
             plt.show()
-    
+
+        return fig
 
     # Clear
     def plot_sp500_with_mdyoy_signals_and_graph(self, save_to=None):
@@ -1617,13 +1618,18 @@ class MacroCrawler:
             print("❌ VIX 데이터를 불러오지 못했습니다.")
             return pd.DataFrame()
 
+        # 데이터프레임의 멀티레벨 컬럼을 단일 레벨로 평탄화
+        df.columns = ['_'.join(col) if isinstance(col, tuple) else col for col in df.columns]
+        
         df = df.reset_index()
-        df = df[['Date', 'Close']].rename(columns={'Date': 'date', 'Close': 'vix'})
+        
+        # 필요한 'Date'와 'Close_^VIX' 컬럼만 선택하고 이름을 변경합니다.
+        df = df[['Date', 'Close_^VIX']].rename(columns={'Date': 'date', 'Close_^VIX': 'vix_index'})
+        
         df['date'] = pd.to_datetime(df['date'])
 
         return df
-
-
+    
     def analyze_vix(self):
         df_vix = self.get_vix_index()
         df_vix = df_vix.sort_values('date')
@@ -2400,5 +2406,5 @@ if __name__ == "__main__":
     # pc_data = crawler.update_putcall_ratio()
     # bb_data = crawler.update_bull_bear_spread()
 
-    data = crawler.get_copper_price_F()
+    data = crawler.update_ism_pmi_data()
     print(data)

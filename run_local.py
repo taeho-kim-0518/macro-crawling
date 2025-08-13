@@ -55,7 +55,7 @@ class MacroCrawler:
         # 마진 부채 업데이트기 연결
         self.margin_updater = MarginDebtUpdater("md_df.csv")
         # ISM PMI 업데이트기 연결
-        self.pmi_updater = ISMPMIUpdater("ism_pmi_data.csv")
+        self.pmi_updater = ISMPMIUpdater("pmi_data.csv")
         # Forward PE 업데이트기 연결
         self.snp_forwardpe_updater = forwardpe_updater("forward_pe_data.csv")
         # PUT CALL Ratio 업데이트기 연결
@@ -132,7 +132,7 @@ class MacroCrawler:
             'series_id': 'CPIAUCSL',  # CPI
             'api_key': self.fred_api_key,
             'file_type': 'json',
-            'observation_start': '2000-01-01'
+            'observation_start': '1999-01-01'
         }
         
         try:
@@ -1607,22 +1607,28 @@ class MacroCrawler:
 
         return message
     
-    def get_vix_index(self, period='10y'):
+    def get_vix_index(self):
         '''
         VIX : VIX는 S&P 500 지수의 옵션 가격에 기초하며, 향후 30일간 지수의 풋옵션1과 콜옵션2 가중 가격을 결합하여 산정
         향후 S&P 500지수가 얼마나 변동할 것으로 투자자들이 생각하는지를 반영
         '''
-        df = yf.download('^VIX', period=period, interval='1d', progress=False)
+        df = yf.download('^VIX', start="2000-01-01", interval="1d")
         if df.empty:
             print("❌ VIX 데이터를 불러오지 못했습니다.")
             return pd.DataFrame()
 
+        # 데이터프레임의 멀티레벨 컬럼을 단일 레벨로 평탄화
+        df.columns = ['_'.join(col) if isinstance(col, tuple) else col for col in df.columns]
+        
         df = df.reset_index()
-        df = df[['Date', 'Close']].rename(columns={'Date': 'date', 'Close': 'vix'})
+        
+        # 필요한 'Date'와 'Close_^VIX' 컬럼만 선택하고 이름을 변경합니다.
+        df = df[['Date', 'Close_^VIX']].rename(columns={'Date': 'date', 'Close_^VIX': 'vix_index'})
+        
         df['date'] = pd.to_datetime(df['date'])
+
         return df
-
-
+    
     def analyze_vix(self):
         df_vix = self.get_vix_index()
         df_vix = df_vix.sort_values('date')
@@ -1814,19 +1820,50 @@ class MacroCrawler:
         }
 
 
-    def get_dollar_index(self): #period="26y"
-        """
-        달러 인덱스 (DXY) 데이터를 yfinance에서 가져와서 DataFrame으로 반환
-        period: '1d', '5d', '1mo', '3mo', '6mo', '1y', etc.
-        """
-        ticker = "DX-Y.NYB"  # yfinance 상 DXY 심볼 (ICE 선물시장용)
-        df = yf.download(ticker, start='2020-01-01', interval="1d", progress=False)
-        df = df.reset_index()
+    def get_dollar_index(self):   #period="26y"
+        '''
+        FRED API : 달러 인덱스
+        '''
 
-        # 컬럼 정리 : 컬럼 이름을 표준화
-        df = df[['Date', 'Close']].rename(columns={'Date': 'date', 'Close': 'dxy'})
-        df['date'] = pd.to_datetime(df['date'])
-        return df
+        url = 'https://api.stlouisfed.org/fred/series/observations'
+        params = {
+            'series_id' : 'DTWEXBGS', # 달러인덱스
+            'api_key' : self.fred_api_key,
+            'file_type' : 'json',
+            'observation_start' : '2000-01-01' # 시작일(원하는 날짜짜)
+        }
+
+        try:
+            response = requests.get(url, params= params, timeout=10)
+            response.raise_for_status() # HTTP 에러 발생 시 예외 처리
+            data = response.json()
+
+            if 'observations' not in data:
+                raise ValueError(F"'observations' 키가 없음 : {data}")
+
+            # 데이터프레임 변환
+            df = pd.DataFrame(data['observations'])
+            df['date'] = pd.to_datetime(df['date'])
+            df['value'] = pd.to_numeric(df['value'], errors= 'coerce')
+
+            return df
+        
+        except Exception as e:
+            print(f"[ERROR] FRED API 호출 실패 : {e}")
+            return pd.DataFrame()
+      
+        # """
+        # 달러 인덱스 (DXY) 데이터를 yfinance에서 가져와서 DataFrame으로 반환
+        # period: '1d', '5d', '1mo', '3mo', '6mo', '1y', etc.
+        # """
+        # ticker = "DX-Y.NYB"  # yfinance 상 DXY 심볼 (ICE 선물시장용)
+        # df = yf.download(ticker, start='2020-01-01', interval="1d", progress=False)
+        # df = df.reset_index()
+
+        # # 컬럼 정리 : 컬럼 이름을 표준화
+        # df = df[['Date', 'Close']].rename(columns={'Date': 'date', 'Close': 'dxy'})
+        # df['date'] = pd.to_datetime(df['date'])
+        # return df
     
     # Clear - 실시간 데이터
     def get_euro_index(self):
@@ -1896,70 +1933,119 @@ class MacroCrawler:
     
 
     # Clear - 월별 데이터 - 1월 딜레이
-    def get_copper_price(self):
-        '''
-        FRED API : 구리 인덱스
-        '''
+    def get_copper_price_F(self):
+        # HG=F: High Grade Copper Futures (구리 선물)
+        df = yf.download("HG=F", start="2000-01-01", interval="1d", group_by="ticker")
 
-        url = 'https://api.stlouisfed.org/fred/series/observations'
-        params = {
-            'series_id' : 'PCOPPUSDM', # 10년물 국채 금리
-            'api_key' : self.fred_api_key,
-            'file_type' : 'json',
-            'observation_start' : '2000-01-01' # 시작일(원하는 날짜짜)
-        }
+        # 1) MultiIndex → 단일 인덱스로 변환
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(0)  # 'CL=F' 레벨 제거 → Price, Close, High...
+            # 또는 df.columns = df.columns.droplevel(0) 하면 'Close', 'High' 등만 남김
+            # 원하는 레벨 선택
 
-        try:
-            response = requests.get(url, params= params, timeout=10)
-            response.raise_for_status() # HTTP 에러 발생 시 예외 처리
-            data = response.json()
-
-            if 'observations' not in data:
-                raise ValueError(F"'observations' 키가 없음 : {data}")
-
-            # 데이터프레임 변환
-            df = pd.DataFrame(data['observations'])
-            df['date'] = pd.to_datetime(df['date'])
-            df['value'] = pd.to_numeric(df['value'], errors= 'coerce')
-
-            return df
+        # 2) 인덱스(Date)를 컬럼으로
+        df = df.reset_index()
         
-        except Exception as e:
-            print(f"[ERROR] FRED API 호출 실패 : {e}")
-            return pd.DataFrame()
+        return df
+
+
+
+        # '''
+        # FRED API : 구리 인덱스
+        # '''
+
+        # url = 'https://api.stlouisfed.org/fred/series/observations'
+        # params = {
+        #     'series_id' : 'PCOPPUSDM', # 10년물 국채 금리
+        #     'api_key' : self.fred_api_key,
+        #     'file_type' : 'json',
+        #     'observation_start' : '2000-01-01' # 시작일(원하는 날짜짜)
+        # }
+
+        # try:
+        #     response = requests.get(url, params= params, timeout=10)
+        #     response.raise_for_status() # HTTP 에러 발생 시 예외 처리
+        #     data = response.json()
+
+        #     if 'observations' not in data:
+        #         raise ValueError(F"'observations' 키가 없음 : {data}")
+
+        #     # 데이터프레임 변환
+        #     df = pd.DataFrame(data['observations'])
+        #     df['date'] = pd.to_datetime(df['date'])
+        #     df['value'] = pd.to_numeric(df['value'], errors= 'coerce')
+
+        #     return df
+        
+        # except Exception as e:
+        #     print(f"[ERROR] FRED API 호출 실패 : {e}")
+        #     return pd.DataFrame()
     
 
-    def get_gold_price(self):
+    def get_gold_price_F(self):
         '''
         FRED API : 금 인덱스
         '''
 
-        url = 'https://api.stlouisfed.org/fred/series/observations'
-        params = {
-            'series_id' : 'IR14270', # 뉴욕 기준 금가격
-            'api_key' : self.fred_api_key,
-            'file_type' : 'json',
-            'observation_start' : '2000-01-01' # 시작일(원하는 날짜짜)
-        }
+        df = yf.download("GC=F", start="2000-01-01", interval="1d", group_by="ticker")
 
-        try:
-            response = requests.get(url, params= params, timeout=10)
-            response.raise_for_status() # HTTP 에러 발생 시 예외 처리
-            data = response.json()
+        # 1) MultiIndex → 단일 인덱스로 변환
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(0)  # 'CL=F' 레벨 제거 → Price, Close, High...
+            # 또는 df.columns = df.columns.droplevel(0) 하면 'Close', 'High' 등만 남김
+            # 원하는 레벨 선택
 
-            if 'observations' not in data:
-                raise ValueError(F"'observations' 키가 없음 : {data}")
-
-            # 데이터프레임 변환
-            df = pd.DataFrame(data['observations'])
-            df['date'] = pd.to_datetime(df['date'])
-            df['value'] = pd.to_numeric(df['value'], errors= 'coerce')
-
-            return df
+        # 2) 인덱스(Date)를 컬럼으로
+        df = df.reset_index()
         
-        except Exception as e:
-            print(f"[ERROR] FRED API 호출 실패 : {e}")
-            return pd.DataFrame()
+        return df
+
+
+        # url = 'https://api.stlouisfed.org/fred/series/observations'
+        # params = {
+        #     'series_id' : 'IR14270', # 뉴욕 기준 금가격
+        #     'api_key' : self.fred_api_key,
+        #     'file_type' : 'json',
+        #     'observation_start' : '2000-01-01' # 시작일(원하는 날짜짜)
+        # }
+
+        # try:
+        #     response = requests.get(url, params= params, timeout=10)
+        #     response.raise_for_status() # HTTP 에러 발생 시 예외 처리
+        #     data = response.json()
+
+        #     if 'observations' not in data:
+        #         raise ValueError(F"'observations' 키가 없음 : {data}")
+
+        #     # 데이터프레임 변환
+        #     df = pd.DataFrame(data['observations'])
+        #     df['date'] = pd.to_datetime(df['date'])
+        #     df['value'] = pd.to_numeric(df['value'], errors= 'coerce')
+
+        #     return df
+        
+        # except Exception as e:
+        #     print(f"[ERROR] FRED API 호출 실패 : {e}")
+        #     return pd.DataFrame()
+
+
+    def get_oil_price_F(self):
+        '''
+        FRED API : 미국 서부텍사스산 원유 선물
+        '''
+
+        df = yf.download("CL=F", start="2000-01-01", interval="1d", group_by="ticker")
+
+        # 1) MultiIndex → 단일 인덱스로 변환
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(0)  # 'CL=F' 레벨 제거 → Price, Close, High...
+            # 또는 df.columns = df.columns.droplevel(0) 하면 'Close', 'High' 등만 남김
+            # 원하는 레벨 선택
+
+        # 2) 인덱스(Date)를 컬럼으로
+        df = df.reset_index()
+        
+        return df
 
     def get_high_yield_spread(self):
         url = 'https://api.stlouisfed.org/fred/series/observations'
@@ -2307,15 +2393,17 @@ class MacroCrawler:
 
         }
 
+    # 40의 법칙
+
 if __name__ == "__main__":
     crawler = MacroCrawler()
 
 
-md_data = crawler.update_margin_debt_data()
-pmi_data = crawler.update_ism_pmi_data()
-fp_data = crawler.update_snp_forwardpe_data()
-pc_data = crawler.update_putcall_ratio()
-bb_data = crawler.update_bull_bear_spread()
+    # md_data = crawler.update_margin_debt_data()
+    # pmi_data = crawler.update_ism_pmi_data()
+    # fp_data = crawler.update_snp_forwardpe_data()
+    # pc_data = crawler.update_putcall_ratio()
+    # bb_data = crawler.update_bull_bear_spread()
 
-data = crawler.plot_sp500_with_signals_and_graph()
-print(data)
+    data = crawler.update_ism_pmi_data()
+    print(data)

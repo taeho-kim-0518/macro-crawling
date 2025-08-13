@@ -18,7 +18,6 @@ class ISMPMIUpdater:
             self.df = pd.read_csv(self.csv_path, parse_dates=["Month/Year"], encoding='CP949')
             # self.df.columns = self.df.columns.str.strip()
             # self.df.columns = self.df.columns.str.replace('\ufeff', '', regex=False)
-            print("PMI DATA", self.df)
             print("✅ ISM PMI CSV 불러오기 성공")
         
         except FileNotFoundError:
