@@ -1,9 +1,13 @@
 import streamlit as st
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import sys
 import os
+
+mpl.rc('font', family='NanumGothic')  
+mpl.rc('axes', unicode_minus=False)  # 음수 기호 깨짐 방지
 
 # 🔧 상위 폴더의 macro_crawling 모듈 임포트 설정
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
