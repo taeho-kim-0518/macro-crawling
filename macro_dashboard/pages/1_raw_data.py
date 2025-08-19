@@ -7,15 +7,12 @@ import numpy as np
 import sys
 import os
 
-# 현재 스크립트 파일의 경로
-# (예: /mcp/macro_dashboard/streamlit_app.py)
-current_dir = os.path.dirname(os.path.abspath(__file__))
+# Streamlit Cloud 환경에 맞게 절대 경로 설정
+# 현재 프로젝트의 루트 디렉토리는 /mount/src/macro-crawling 입니다.
+# 따라서 폰트 폴더는 /mount/src/macro-crawling/fonts 에 위치합니다.
+font_folder = '/mount/src/macro-crawling/fonts'
 
-# 상위 폴더(mcp 폴더)로 이동한 후 'fonts' 폴더 경로 설정
-# os.path.join을 사용하여 OS에 관계없이 올바른 경로를 만듭니다.
-font_folder = os.path.join(current_dir, '..', 'fonts')
-
-# 폰트 파일이 있는지 확인
+# 폰트 파일이 있는지 확인하고 설정
 font_path = None
 for filename in os.listdir(font_folder):
     if filename.endswith('.ttf') or filename.endswith('.otf'):
@@ -23,10 +20,7 @@ for filename in os.listdir(font_folder):
         break
 
 if font_path and os.path.exists(font_path):
-    # Matplotlib 폰트 캐시에 새 폰트 파일 추가
     fm.fontManager.addfont(font_path)
-    
-    # 폰트 이름 설정
     font_name = fm.FontProperties(fname=font_path).get_name()
     plt.rc('font', family=font_name)
     
