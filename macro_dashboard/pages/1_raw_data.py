@@ -148,26 +148,29 @@ col1, col2, col3 = st.columns(3)
 with col1:
     st.subheader("🟦 10년물 금리")
     st.pyplot(draw_yield_chart(df_10y, 'value', '10Y Yield', 'blue'))
-    st.write("월별 데이터, 1개월 지연 발표")
+    st.write("월별 데이터, 1개월 지연 데이터")
 
 with col2:
     st.subheader("🟧 2년물 금리")
     st.pyplot(draw_yield_chart(df_2y, 'value', '2Y Yield', 'orange'))
-    st.write("월별 데이터, 1개월 지연 발표")
+    st.write("월별 데이터, 1개월 지연 데이터")
 
 with col3:
     st.subheader("🟥 기준금리")
     st.pyplot(draw_yield_chart(df_fed, 'fed_funds_rate', 'Fed Funds Rate', 'red'))
+    st.write("월별 데이터, 1개월 지연 데이터")
 
 # 🔳 시각화 (2행 2열)
 col1, col2 = st.columns(2)
 with col1:
     st.subheader("🟩 실질 금리")
     st.pyplot(draw_yield_chart(real_rate, 'value', 'Real Yield', 'green'))
+    st.write("월별 데이터, 1개월 지연 데이터")
 
 with col2:
     st.subheader("🟨 CPI Index")
     st.pyplot(draw_yield_chart(df_cpi, 'CPI YOY(%)', 'CPI Index', 'yellow'))
+    st.write("월별 데이터, 1개월 지연 데이터")
 
 # ────────────────────────────────
 st.markdown("---")
@@ -196,12 +199,14 @@ with col1:
     st.pyplot(draw_abs_chart(
         m2_df, 'value', 'M2 Index', 'green', '단위: USD (Billion)'
     ))
+    st.write("매월 25일 발표 데이터, 1개월 지연 데이터")
 
 with col2:
     st.subheader("🟪 Margin Debt")
     st.pyplot(draw_abs_chart(
         md_df, 'margin_debt', 'Margin Debt', 'purple', '단위: USD (Million)'
     ))
+    st.write("매월 25일 발표 데이터, 1개월 지연 데이터")
 
 
 # ────────────────────────────────
@@ -244,19 +249,22 @@ with col1:
     st.pyplot(draw_abs_chart(
         dollar_index, 'value', 'Dollar Index', 'green', 'Index'
     ))
+    st.write("실시간 일별데이터")
+
 
 with col2:
     st.subheader("💴 Yen Index")
     st.pyplot(draw_abs_chart(
         yen_index, 'value', 'Yen Index', 'orange', 'Index'
     ))
+    st.write("실시간 일별데이터")
 
 with col3:
     st.subheader("💶 Euro Index")
     st.pyplot(draw_abs_chart(
         euro_index, 'value', 'Euro Index', 'blue', 'Index'
     ))
-
+    st.write("실시간 일별데이터")
 
 col1, col2, col3 = st.columns(3)
 
@@ -265,18 +273,25 @@ with col1:
     st.pyplot(draw_abs_chart(
         copper_price, 'value', 'Copper Price', 'orange', 'Price'
     ))
+    st.write("구리 선물 가격")
+    st.write("실시간 일별데이터")
+    
 
 with col2:
     st.subheader("🪙 Gold_F")
     st.pyplot(draw_abs_chart(
         gold_price, 'value', 'Gold Price', 'yellow', 'Price'
     ))
+    st.write("금 선물 가격")
+    st.write("실시간 일별데이터")
 
 with col3:
     st.subheader("🛢️ Oil_F")
     st.pyplot(draw_abs_chart(
         oil_price, 'value', 'Gold Price', 'black', 'Price'
     ))
+    st.write("원유 선물 가격")
+    st.write("실시간 일별데이터")
 
     # ────────────────────────────────
 st.markdown("---")
@@ -304,11 +319,14 @@ with col1:
     st.pyplot(draw_abs_chart(
         vix_index, 'vix_index', 'VIX', 'green', 'Index'
     ))
+    st.write("실시간 일별데이터")
+
 with col2:
     st.subheader("🧾 PMI Index")
     st.pyplot(draw_abs_chart(
         pmi_index, 'PMI', 'PMI Index', 'orange', 'Index'
     ))
+    st.write("월별 데이터, 1개월 지연 데이터")
 
 # 🔳 시각화 (1행 3열)
 col1, col2 = st.columns(2)
@@ -317,12 +335,14 @@ with col1:
     st.pyplot(draw_abs_chart(
         UMCSENT_index, 'umcsent_index', 'UMCSENT Index', 'blue', 'Index'
     ))
+    st.write("매월 25일 발표 데이터, 1개월 지연 데이터")
 
 with col2:
     st.subheader("🧑‍💻 국제금융지수")
     st.pyplot(draw_abs_chart(
         ncfi_data, 'NFCI_index', 'NFCI Index', 'orange', 'Index'
     ))
+    st.write("주별 데이터")
 
 
 # 🔳 시각화 (1행 3열)
@@ -333,12 +353,14 @@ with col1:
     st.pyplot(draw_yield_chart(
         unemployment_rate, 'unemployment_rate', '실업률', 'green'
     ))
+    st.write("월별 데이터, 1개월 지연 데이터")
 
 with col2:
     st.subheader("🧾 PutCall R")
     st.pyplot(draw_yield_chart(
         put_call_ratio, 'equity_value', 'PutCall Ratio', 'blue'
     ))
+    st.write("실시간 일별데이터")
 
 
 
@@ -350,9 +372,11 @@ with col1:
     st.pyplot(draw_yield_chart(
         high_yeild_spread, 'value', '하이일드 스프레드', 'blue'
     ))
+    st.write("실시간 일별데이터")
 
 with col2:
     st.subheader("⏳ Bull-Bear")
     st.pyplot(draw_yield_chart(
         bull_bear_spread, 'spread', 'Bull_Bear 스프레드', 'purple'
     ))
+    st.write("주별 데이터")

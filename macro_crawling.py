@@ -2406,5 +2406,5 @@ if __name__ == "__main__":
     # pc_data = crawler.update_putcall_ratio()
     # bb_data = crawler.update_bull_bear_spread()
 
-    data = crawler.update_ism_pmi_data()
+    data = crawler.update_bull_bear_spread()
     print(data)
