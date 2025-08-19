@@ -429,102 +429,157 @@ class MacroCrawler:
     # Clear
     def plot_sp500_with_signals_and_graph(self, save_to=None):
         """
-        S&P500 종가와 margin_debt/m2 비율 및 매수/매도 신호를 함께 시각화
-        df : 병합된 데이터프레임(merge_m2_margin_sp500_abs)
-        - 좌측 y축: S&P500
-        - 우측 y축: margin_debt / m2 비율
-        - 매수 시점: 초록색 ▲
-        - 매도 시점: 빨간색 ▼
+        S&P500 종가 + Margin Debt/M2 비율 + 발표시차(다음달 25일) 반영 신호 시각화
+
+        - 신호 계산은 월별(MS)로 수행 (36개월 z-score)
+        - 각 월의 지표는 '다음 달 25일'에 공개된다고 가정
+        - 발표일이 주말/휴일이면 '발표일 이후 첫 거래일'에 신호와 비율이 유효
         """
 
-        df = self.merge_m2_margin_sp500_abs()
-        # 비율 및 신호 계산
-        df = df.copy()
-        df["ratio"] = df["margin_debt"] / df["m2"]
-        df["ratio_z"] = (df["ratio"] - df["ratio"].rolling(window=36, min_periods=12).mean()) / \
-                        df["ratio"].rolling(window=36, min_periods=12).std()
-        df["ratio_change_pct"] = df["ratio"].pct_change() * 100
+        import numpy as np
+        import pandas as pd
+        import matplotlib.pyplot as plt
 
-        # 완화된 조건
-        df["buy_signal"] = (df["ratio_z"] < -1.2) & (df["ratio_change_pct"] > 0)
-        df["sell_signal"] = (df["ratio_z"] > 1.5) & (df["ratio_change_pct"] < -5)
+        # 1) 원자료 병합 (일단 일별 S&P500과 월별 지표가 함께 들어있는 df라 가정)
+        df = self.merge_m2_margin_sp500_abs().copy()
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date")
 
-        # 시각화
+        # ---- 월별 테이블 만들기 (각 월 1일 기준) ----
+        # margin_debt, m2는 월별이므로 월 초 기준으로 대표값을 하나 뽑아온다.
+        # (여기서는 해당 월의 첫 값 사용; 필요시 last/mean으로 바꿀 수 있음)
+        m_month = (
+            df.loc[:, ["date", "margin_debt", "m2"]]
+            .dropna(subset=["margin_debt", "m2"])
+            .copy()
+        )
+        m_month["month"] = m_month["date"].values.astype("datetime64[M]")  # 월 단위로 버킷팅 (MS)
+        m_month = (
+            m_month.sort_values(["month", "date"])
+                .groupby("month", as_index=False)
+                .first()[["month", "margin_debt", "m2"]]
+        )
+        m_month = m_month.rename(columns={"month": "month_start"})  # 월 초(예: 2025-07-01)
+
+        # 2) 월별 비율 및 z-score 계산 (36개월 롤링)
+        m_month["ratio"] = m_month["margin_debt"] / m_month["m2"]
+        m_month["ratio_ma"] = m_month["ratio"].rolling(window=36, min_periods=12).mean()
+        m_month["ratio_sd"] = m_month["ratio"].rolling(window=36, min_periods=12).std()
+        m_month["ratio_z"] = (m_month["ratio"] - m_month["ratio_ma"]) / m_month["ratio_sd"]
+        m_month["ratio_change_pct"] = m_month["ratio"].pct_change() * 100
+
+        # 3) 월별 신호 (완화 조건 그대로 사용)
+        m_month["buy_signal"]  = (m_month["ratio_z"] < -1.2) & (m_month["ratio_change_pct"] > 0)
+        m_month["sell_signal"] = (m_month["ratio_z"] >  1.5) & (m_month["ratio_change_pct"] < -5)
+
+        # 4) '발표일' 계산: 다음 달 25일
+        #    예: 7월 데이터 -> 8월 25일
+        m_month["release_date"] = (
+            m_month["month_start"] + pd.offsets.MonthBegin(1) + pd.DateOffset(days=24)
+        )
+
+        # 5) 발표일을 '발표일 이후 첫 거래일'로 맞추기
+        sp = df.loc[:, ["date", "sp500_close"]].dropna().drop_duplicates().sort_values("date")
+        # asof용 준비: 좌측키는 발표일, 우측키는 '발표일 이후 첫 거래일'을 찾기 위해
+        # trick: 발표일보다 '엄격히 크거나 같은' 첫 날짜를 찾기 위해 머지 전략 사용
+        # 구현: 거래일 DataFrame에 자기 자신 인덱스를 넣고, 발표일과 거래일을 outer-merge 후 ffill
+        # 더 간단히: numpy searchsorted 활용
+        sp_dates = sp["date"].to_numpy()
+        def next_trading_day(dt):
+            i = np.searchsorted(sp_dates, np.datetime64(dt), side="left")
+            return pd.NaT if i >= len(sp_dates) else pd.Timestamp(sp_dates[i])
+
+        m_month["effective_date"] = m_month["release_date"].apply(next_trading_day)
+
+        # 6) '발표 후에만 보이는' 일별 비율 시계열 만들기
+        #    각 월의 ratio 값이 effective_date부터 다음 발표 전날까지 유지되도록 생성
+        #    (플롯 우측축에 그릴 라인)
+        published = m_month.loc[:, ["effective_date", "ratio"]].dropna().copy()
+        published = published.sort_values("effective_date")
+
+        # 일별 캘린더로 확장
+        full_days = sp[["date"]].copy()
+        full_days["ratio_published"] = np.nan
+
+        # 각 구간에 값 채워넣기
+        # 구간: [effective_date[i], effective_date[i+1]) 에 ratio[i] 유지
+        eff = published["effective_date"].to_list()
+        vals = published["ratio"].to_list()
+        for i, start in enumerate(eff):
+            end = eff[i+1] if i+1 < len(eff) else full_days["date"].iloc[-1] + pd.Timedelta(days=1)
+            mask = (full_days["date"] >= start) & (full_days["date"] < end)
+            full_days.loc[mask, "ratio_published"] = vals[i]
+
+        # 메인 df에 조인하여 플롯용 열 합치기
+        plot_df = sp.merge(full_days, on="date", how="left")
+
+        # 신호 테이블 준비
+        signals = m_month.loc[
+            (m_month["buy_signal"] | m_month["sell_signal"]) & m_month["effective_date"].notna(),
+            ["month_start", "release_date", "effective_date", "ratio_z", "ratio_change_pct", "buy_signal", "sell_signal"]
+        ].copy()
+
+        signals["signal_type"] = signals.apply(
+            lambda row: "BUY" if row["buy_signal"] else ("SELL" if row["sell_signal"] else None),
+            axis=1
+        )
+
+        signals = signals.merge(
+            sp[["date", "sp500_close"]],
+            left_on="effective_date",
+            right_on="date",
+            how="left"
+        ).drop(columns=["date"])
+
+        signals = signals[[
+            "effective_date", "release_date", "month_start",
+            "signal_type", "sp500_close", "ratio_z", "ratio_change_pct"
+        ]]
+
+        # --- 그래프 시각화 (fig, ax1 생성) ---
         fig, ax1 = plt.subplots(figsize=(14, 6))
 
-        # S&P500 지수 (좌측 y축)
-        ax1.plot(df["date"], df["sp500_close"], color="blue", label="S&P500 지수", linewidth=2)
-        ax1.scatter(
-            df[df["buy_signal"]]["date"],
-            df[df["buy_signal"]]["sp500_close"],
-            color="green", marker="^", s=100, label="매수 신호"
-        )
-        ax1.scatter(
-            df[df["sell_signal"]]["date"],
-            df[df["sell_signal"]]["sp500_close"],
-            color="red", marker="v", s=100, label="매도 신호"
-        )
+        ax1.plot(plot_df["date"], plot_df["sp500_close"], linewidth=2, label="S&P500 지수", color="blue")
         ax1.set_ylabel("S&P500 종가", color="blue")
-        ax1.tick_params(axis='y', labelcolor="blue")
+        ax1.tick_params(axis="y", labelcolor="blue")
 
-        # margin_debt / m2 비율 (우측 y축)
+        buys  = signals[signals["signal_type"] == "BUY"]
+        sells = signals[signals["signal_type"] == "SELL"]
+
+        ax1.scatter(buys["effective_date"],  buys["sp500_close"],  marker="^", s=100, label="매수 신호", color="green")
+        ax1.scatter(sells["effective_date"], sells["sp500_close"], marker="v", s=100, label="매도 신호", color="red")
+
         ax2 = ax1.twinx()
-        ax2.plot(df["date"], df["ratio"], color="gray", linestyle="--", label="Margin Debt / M2 비율")
+        ax2.plot(plot_df["date"], plot_df["ratio_published"], linestyle="--", label="Margin Debt/M2 (발표 반영)", color="gray")
         ax2.set_ylabel("Margin Debt / M2 비율", color="gray")
-        ax2.tick_params(axis='y', labelcolor="gray")
+        ax2.tick_params(axis="y", labelcolor="gray")
 
-        # 제목 및 범례
-        fig.suptitle("S&P500 + 매수/매도 신호 + Margin Debt / M2 비율", fontsize=14)
-        fig.legend(loc="upper left", bbox_to_anchor=(0.1, 0.9))
+        fig.suptitle("S&P500 + 매수/매도 신호(발표시차 반영) + Margin Debt/M2 비율", fontsize=14)
+
+        lines, labels = [], []
+        for ax in [ax1, ax2]:
+            l, lab = ax.get_legend_handles_labels()
+            lines += l; labels += lab
+        fig.legend(lines, labels, loc="upper left", bbox_to_anchor=(0.1, 0.92))
+
         fig.tight_layout()
+
+        # ✅ 컬럼명 변경
+        signals = signals.rename(columns={
+            "effective_date": "주문일",
+            "release_date": "발표일",
+            "month_start": "데이터 기준일",
+            "ratio_change_pct": "전월대비 상승률"
+        })
+
         if save_to:
-            fig.savefig(save_to, format='png')
+            fig.savefig(save_to, format="png")
             plt.close(fig)
         else:
-            plt.show()
+            plt.show()   # ✅ VS Code에서도 창 뜸
 
-        return fig
-
-    # Clear
-    def plot_sp500_with_mdyoy_signals_and_graph(self, save_to=None):
-        '''
-        S&P500, Margin Debt / M2, YoY 전략 기반 매수/매도 시점 시각화
-        df : 병합된 데이터프레임(generate_mdyoy_signals)
-        '''
-        df = self.generate_mdyoy_signals()
-
-        fig, ax1 = plt.subplots(figsize=(14, 6))
-
-        # S&P500
-        ax1.plot(df["date"], df["sp500_close"], label="S&P500", color="black")
-        ax1.set_ylabel("S&P500 지수", fontsize=12)
-        ax1.set_xlabel("날짜", fontsize=12)
-        ax1.tick_params(axis='y')
-        ax1.legend(loc="upper left")
-
-        # 매수/매도 시점
-        buy_dates = df[df["buy_signal"]]["action_date"]
-        buy_prices = df[df["buy_signal"]]["sp500_close"]
-        sell_dates = df[df["sell_signal"]]["action_date"]
-        sell_prices = df[df["sell_signal"]]["sp500_close"]
-
-        ax1.scatter(buy_dates, buy_prices, color='blue', label='매수 시점', marker='^', s=100, zorder=5)
-        ax1.scatter(sell_dates, sell_prices, color='red', label='매도 시점', marker='v', s=100, zorder=5)
-
-        # 오른쪽 y축: Margin Debt / M2 비율
-        ax2 = ax1.twinx()
-        ax2.plot(df["date"], df["ratio"], label="Margin Debt / M2", color="green", alpha=0.4)
-        ax2.set_ylabel("Margin Debt / M2", fontsize=12)
-        ax2.tick_params(axis='y')
-
-        fig.suptitle("📉 Margin Debt YoY 전략: S&P500 및 Margin Debt / M2 비율", fontsize=14)
-        fig.legend(loc="upper center", bbox_to_anchor=(0.5, -0.05), ncol=3)
-        plt.tight_layout()
-        if save_to:
-            fig.savefig(save_to, format='png')
-            plt.close(fig)
-        else:
-            plt.show()
+        # ✅ 그래프와 신호 테이블 반환
+        return fig, ax1, signals
 
     # Clear
     def check_today_md_signal(self):
@@ -2407,5 +2462,5 @@ if __name__ == "__main__":
     # pc_data = crawler.update_putcall_ratio()
     # bb_data = crawler.update_bull_bear_spread()
 
-    data = crawler.update_bull_bear_spread()
+    data = crawler.plot_sp500_with_signals_and_graph()
     print(data)
