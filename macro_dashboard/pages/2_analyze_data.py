@@ -47,7 +47,13 @@ else:
 merge_m2_md_df = crawler.merge_m2_margin_sp500_abs()
 
 st.subheader("S&P500 + Margin Debt/M2 + Signals")
-m2_md_fig = crawler.plot_sp500_with_signals_and_graph()
+fig, ax, signals = crawler.plot_sp500_with_signals_and_graph()
 
-st.pyplot(m2_md_fig)
-plt.close(m2_md_fig)  # 렌더 후 닫기(옵션)
+# 그래프 렌더
+st.pyplot(fig, use_container_width=True)
+
+# 시그널 테이블 표시
+st.dataframe(signals)
+
+# 렌더 후 닫기 (원하면)
+plt.close(fig)

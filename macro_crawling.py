@@ -574,9 +574,9 @@ class MacroCrawler:
 
         if save_to:
             fig.savefig(save_to, format="png")
-            plt.close(fig)
-        else:
-            plt.show()   # ✅ VS Code에서도 창 뜸
+            # plt.close(fig)
+        # else:
+        #     plt.show()   # ✅ VS Code에서도 창 뜸
 
         # ✅ 그래프와 신호 테이블 반환
         return fig, ax1, signals
