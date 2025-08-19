@@ -298,15 +298,15 @@ st.markdown("---")
 st.header("📈 기타 경제 지표")
 
 unemployment_rate = crawler.get_unemployment_rate() # date, unemployment_rate
-pmi_index = crawler.update_ism_pmi_data() # date, PMI
+pmi_index = pd.read_csv("pmi_data.csv") # date, PMI
 UMCSENT_index = crawler.get_UMCSENT_index() # date umcsent_index
 
 vix_index = crawler.get_vix_index() # date, vix_index
-put_call_ratio = crawler.update_putcall_ratio() # date, equity_value, index_value 
+put_call_ratio = pd.read_csv("put_call_ratio.csv") # date, equity_value, index_value 
 ncfi_data = crawler.get_nfci() # date, NFCI_index
 
 high_yeild_spread = crawler.get_high_yield_spread() # date, value
-bull_bear_spread = crawler.update_bull_bear_spread() # date, spread
+bull_bear_spread = pd.read_csv("bull_bear_spread.csv") # date, spread
 
 if __name__ == "__main__" :
     print("Copper DF", pmi_index)
