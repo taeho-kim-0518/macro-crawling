@@ -1,14 +1,16 @@
 import streamlit as st
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 import pandas as pd
 import numpy as np
 import sys
 import os
 
 # 한글 폰트 설정 (Windows에서는 기본적으로 'Malgun Gothic' 가능)
-mpl.rcParams['font.family'] = 'Malgun Gothic'  # 또는 'NanumGothic', 'AppleGothic' (Mac)
-mpl.rcParams['axes.unicode_minus'] = False
+plt.rc('font', family='NanumGothic')  # 또는 'NanumGothic', 'AppleGothic' (Mac)
+# mpl.rcParams['axes.unicode_minus'] = False
+
 
 # 🔧 상위 폴더의 macro_crawling 모듈 임포트 설정
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))

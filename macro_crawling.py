@@ -63,6 +63,7 @@ class MacroCrawler:
         # Bull Bear Spread 업데이트기 연결
         self.bull_bear_spread_updater = BullBearSpreadUpdater("bull_bear_spread.csv")
 
+
     # Clear 1개월 딜레이 데이터
     def get_10years_treasury_yeild(self):
         '''
