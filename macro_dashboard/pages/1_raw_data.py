@@ -7,15 +7,15 @@ import numpy as np
 import sys
 import os
 
-# 폰트 설정 (기존 코드)
-plt.rc('font', family='NanumGothic') # 또는 'NanumGothic', 'AppleGothic' (Mac)
+# 현재 스크립트 파일의 경로
+# (예: /mcp/macro_dashboard/streamlit_app.py)
+current_dir = os.path.dirname(os.path.abspath(__file__))
 
-# 폰트 설정 (수정 코드)
-# 폰트 폴더 경로 설정 (프로젝트 루트의 'fonts' 폴더)
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-font_folder = os.path.join(PROJECT_ROOT, 'fonts')
+# 상위 폴더(mcp 폴더)로 이동한 후 'fonts' 폴더 경로 설정
+# os.path.join을 사용하여 OS에 관계없이 올바른 경로를 만듭니다.
+font_folder = os.path.join(current_dir, '..', 'fonts')
 
-# 폰트 폴더에서 .ttf 파일 찾기
+# 폰트 파일이 있는지 확인
 font_path = None
 for filename in os.listdir(font_folder):
     if filename.endswith('.ttf') or filename.endswith('.otf'):
@@ -23,12 +23,15 @@ for filename in os.listdir(font_folder):
         break
 
 if font_path and os.path.exists(font_path):
+    # Matplotlib 폰트 캐시에 새 폰트 파일 추가
     fm.fontManager.addfont(font_path)
-    plt.rc('font', family=fm.FontProperties(fname=font_path).get_name())
+    
+    # 폰트 이름 설정
+    font_name = fm.FontProperties(fname=font_path).get_name()
+    plt.rc('font', family=font_name)
     
 # Matplotlib에서 '-' 기호 깨짐 방지
 plt.rcParams['axes.unicode_minus'] = False
-
 
 # 🔧 상위 폴더의 macro_crawling 모듈 임포트 설정
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
