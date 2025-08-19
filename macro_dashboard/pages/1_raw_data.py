@@ -7,9 +7,27 @@ import numpy as np
 import sys
 import os
 
-# 한글 폰트 설정 (Windows에서는 기본적으로 'Malgun Gothic' 가능)
-plt.rc('font', family='NanumGothic')  # 또는 'NanumGothic', 'AppleGothic' (Mac)
-# mpl.rcParams['axes.unicode_minus'] = False
+# 폰트 설정 (기존 코드)
+plt.rc('font', family='NanumGothic') # 또는 'NanumGothic', 'AppleGothic' (Mac)
+
+# 폰트 설정 (수정 코드)
+# 폰트 폴더 경로 설정 (프로젝트 루트의 'fonts' 폴더)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+font_folder = os.path.join(PROJECT_ROOT, 'fonts')
+
+# 폰트 폴더에서 .ttf 파일 찾기
+font_path = None
+for filename in os.listdir(font_folder):
+    if filename.endswith('.ttf') or filename.endswith('.otf'):
+        font_path = os.path.join(font_folder, filename)
+        break
+
+if font_path and os.path.exists(font_path):
+    fm.fontManager.addfont(font_path)
+    plt.rc('font', family=fm.FontProperties(fname=font_path).get_name())
+    
+# Matplotlib에서 '-' 기호 깨짐 방지
+plt.rcParams['axes.unicode_minus'] = False
 
 
 # 🔧 상위 폴더의 macro_crawling 모듈 임포트 설정
