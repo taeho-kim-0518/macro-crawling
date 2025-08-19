@@ -1,0 +1,59 @@
+# 워크플로우의 이름을 지정합니다.
+name: Update All Macro Data
+
+# 이 워크플로우를 매일 새벽 3시(UTC)에 실행합니다.
+# UTC 03:00는 한국 시간(KST, UTC+9)으로 오후 12:00입니다.
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  # GitHub UI에서 'Run workflow' 버튼을 눌러 수동으로 실행할 수 있도록 합니다.
+  workflow_dispatch:
+
+# 실행할 작업(job)을 정의합니다.
+jobs:
+  update-csv:
+    # 이 작업이 실행될 운영체제 환경을 지정합니다.
+    runs-on: ubuntu-latest
+    
+    # 이 작업에서 순차적으로 실행될 스텝(steps)을 정의합니다.
+    steps:
+      - name: Checkout repository
+        # 저장소 코드를 워크플로우 환경으로 가져옵니다.
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        # Python 환경을 설정합니다.
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10' # 원하는 Python 버전을 지정할 수 있습니다.
+
+      - name: Install dependencies
+        # 필요한 Python 라이브러리들을 설치합니다.
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas requests beautifulsoup4
+
+      - name: Run Python scripts to update data
+        # 모든 파이썬 스크립트를 순차적으로 실행합니다.
+        # 각 스크립트는 최상위 폴더에 있으므로 파일 이름만으로 실행합니다.
+        run: |
+          echo "Executing md_updater.py..."
+          python md_updater.py
+          echo "Executing ism_pmi_updater.py..."
+          python ism_pmi_updater.py
+          echo "Executing SNP_forward_pe_updater.py..."
+          python SNP_forward_pe_updater.py
+          echo "Executing putcall_ratio_updater.py..."
+          python putcall_ratio_updater.py
+          echo "Executing bullbear_spread_updater.py..."
+          python bullbear_spread_updater.py
+          
+      - name: Commit and push changes
+        # 변경된 모든 CSV 파일을 Git에 커밋하고 푸시합니다.
+        # 와일드카드(wildcard)를 사용하면 여러 파일을 한 번에 추가할 수 있습니다.
+        run: |
+          git config --global user.name 'github-actions'
+          git config --global user.email 'github-actions@github.com'
+          git add *.csv
+          git commit -m "chore: Update all data via automated script" || true
+          git push
