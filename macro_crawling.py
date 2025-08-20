@@ -448,18 +448,42 @@ class MacroCrawler:
         # ---- 월별 테이블 만들기 (각 월 1일 기준) ----
         # margin_debt, m2는 월별이므로 월 초 기준으로 대표값을 하나 뽑아온다.
         # (여기서는 해당 월의 첫 값 사용; 필요시 last/mean으로 바꿀 수 있음)
-        m_month = (
-            df.loc[:, ["date", "margin_debt", "m2"]]
-            .dropna(subset=["margin_debt", "m2"])
-            .copy()
+        # m_month = (
+        #     df.loc[:, ["date", "margin_debt", "m2"]]
+        #     .dropna(subset=["margin_debt", "m2"])
+        #     .copy()
+        # )
+        # m_month["month"] = m_month["date"].values.astype("datetime64[M]")  # 월 단위로 버킷팅 (MS)
+        # m_month = (
+        #     m_month.sort_values(["month", "date"])
+        #         .groupby("month", as_index=False)
+        #         .first()[["month", "margin_debt", "m2"]]
+        # )
+        # m_month = m_month.rename(columns={"month": "month_start"})  # 월 초(예: 2025-07-01)
+
+        m_src = (
+        df.loc[:, ["date", "margin_debt", "m2"]]
+        .dropna(subset=["margin_debt", "m2"])
+        .copy()
         )
-        m_month["month"] = m_month["date"].values.astype("datetime64[M]")  # 월 단위로 버킷팅 (MS)
-        m_month = (
-            m_month.sort_values(["month", "date"])
-                .groupby("month", as_index=False)
-                .first()[["month", "margin_debt", "m2"]]
+
+        # 월초 라벨로 그룹핑하고 '그 달의 마지막 관측값'을 사용
+        monthly = (
+            m_src.set_index("date")
+                .groupby(pd.Grouper(freq="MS"))
+                .last()                # 그 달 말일 시점의 '알고 있던' 값
+                .dropna()
+                .reset_index()
         )
-        m_month = m_month.rename(columns={"month": "month_start"})  # 월 초(예: 2025-07-01)
+
+        # ★ 핵심: 이 값은 '이전 월'의 경제지표이므로 월 라벨을 1개월 뒤로 당겨서(−1M) 실제 기준월로 맞춤
+        monthly["month_start"] = (monthly["date"] - pd.offsets.MonthBegin(1))
+
+        m_month = (
+            monthly[["month_start", "margin_debt", "m2"]]
+                .sort_values("month_start")
+                .reset_index(drop=True)
+        )
 
         # 2) 월별 비율 및 z-score 계산 (36개월 롤링)
         m_month["ratio"] = m_month["margin_debt"] / m_month["m2"]
@@ -470,7 +494,8 @@ class MacroCrawler:
 
         # 3) 월별 신호 (완화 조건 그대로 사용)
         m_month["buy_signal"]  = (m_month["ratio_z"] < -1.2) & (m_month["ratio_change_pct"] > 0)
-        m_month["sell_signal"] = (m_month["ratio_z"] >  1.5) & (m_month["ratio_change_pct"] < -5)
+        m_month["sell_signal"] = (m_month["ratio_change_pct"] < -7)
+        # m_month["sell_signal"] = (m_month["ratio_z"] > 1.2) & (m_month["ratio_change_pct"] < -5)
 
         # 4) '발표일' 계산: 다음 달 25일
         #    예: 7월 데이터 -> 8월 25일
@@ -478,59 +503,76 @@ class MacroCrawler:
             m_month["month_start"] + pd.offsets.MonthBegin(1) + pd.DateOffset(days=24)
         )
 
+    
         # 5) 발표일을 '발표일 이후 첫 거래일'로 맞추기
-        sp = df.loc[:, ["date", "sp500_close"]].dropna().drop_duplicates().sort_values("date")
-        # asof용 준비: 좌측키는 발표일, 우측키는 '발표일 이후 첫 거래일'을 찾기 위해
-        # trick: 발표일보다 '엄격히 크거나 같은' 첫 날짜를 찾기 위해 머지 전략 사용
-        # 구현: 거래일 DataFrame에 자기 자신 인덱스를 넣고, 발표일과 거래일을 outer-merge 후 ffill
-        # 더 간단히: numpy searchsorted 활용
-        sp_dates = sp["date"].to_numpy()
+        # ✅ 반드시 '일별' S&P500 라인 확보
+        sp_daily = self.get_sp500().copy()  # 일별로 받는 함수 사용(없으면 self.get_sp500())
+        sp_daily["date"] = pd.to_datetime(sp_daily["date"])
+
+        # 컬럼 표준화
+        if "close" in sp_daily.columns:
+            sp_daily = sp_daily.rename(columns={"close": "sp500_close"})
+        elif "Close" in sp_daily.columns:
+            sp_daily = sp_daily.rename(columns={"Close": "sp500_close"})
+        # 이미 sp500_close면 그대로 사용
+
+        sp_line = (
+            sp_daily[["date", "sp500_close"]]
+            .dropna()
+            .drop_duplicates(subset=["date"])
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
+
+        # 거래일 캘린더 = 실제 가격이 있는 날짜로 사용 (휴일 자동 제외)
+        trade_days = sp_line[["date"]].copy()
+        sp_dates = trade_days["date"].to_numpy()
+
         def next_trading_day(dt):
             i = np.searchsorted(sp_dates, np.datetime64(dt), side="left")
             return pd.NaT if i >= len(sp_dates) else pd.Timestamp(sp_dates[i])
 
         m_month["effective_date"] = m_month["release_date"].apply(next_trading_day)
 
-        # 6) '발표 후에만 보이는' 일별 비율 시계열 만들기
-        #    각 월의 ratio 값이 effective_date부터 다음 발표 전날까지 유지되도록 생성
-        #    (플롯 우측축에 그릴 라인)
-        published = m_month.loc[:, ["effective_date", "ratio"]].dropna().copy()
-        published = published.sort_values("effective_date")
-
-        # 일별 캘린더로 확장
-        full_days = sp[["date"]].copy()
+        # 6) '발표 후에만 보이는' 일별 비율 시계열 만들기 (거래일 캘린더 기준)
+        full_days = trade_days.copy()
         full_days["ratio_published"] = np.nan
 
-        # 각 구간에 값 채워넣기
-        # 구간: [effective_date[i], effective_date[i+1]) 에 ratio[i] 유지
-        eff = published["effective_date"].to_list()
+        published = (
+            m_month.loc[:, ["effective_date", "ratio"]]
+                .dropna()
+                .sort_values("effective_date")
+        )
+
+        eff  = published["effective_date"].to_list()
         vals = published["ratio"].to_list()
+
         for i, start in enumerate(eff):
             end = eff[i+1] if i+1 < len(eff) else full_days["date"].iloc[-1] + pd.Timedelta(days=1)
             mask = (full_days["date"] >= start) & (full_days["date"] < end)
             full_days.loc[mask, "ratio_published"] = vals[i]
 
-        # 메인 df에 조인하여 플롯용 열 합치기
-        plot_df = sp.merge(full_days, on="date", how="left")
+        # 플롯용 DF: 거래일 ⨯ 가격 ⨯ ratio_published
+        plot_df = trade_days.merge(sp_line, on="date", how="left").merge(full_days, on="date", how="left")
+        plot_df["sp500_close"] = pd.to_numeric(plot_df["sp500_close"], errors="coerce").ffill()  # ✔ 연속 라인 보장
 
-        # 신호 테이블 준비
+        # --- 시그널 DF 만들기 (가격 붙이기) ---
         signals = m_month.loc[
             (m_month["buy_signal"] | m_month["sell_signal"]) & m_month["effective_date"].notna(),
             ["month_start", "release_date", "effective_date", "ratio_z", "ratio_change_pct", "buy_signal", "sell_signal"]
         ].copy()
 
-        signals["signal_type"] = signals.apply(
-            lambda row: "BUY" if row["buy_signal"] else ("SELL" if row["sell_signal"] else None),
-            axis=1
-        )
+        signals["signal_type"] = np.where(signals["buy_signal"], "BUY", "SELL")
 
-        signals = signals.merge(
-            sp[["date", "sp500_close"]],
+        # ✔ 발표일(=주문일) 당일에 가격이 비어 있으면 다음 거래일 가격을 붙이도록 asof 병합
+        signals = pd.merge_asof(
+            signals.sort_values("effective_date"),
+            sp_line.sort_values("date"),
             left_on="effective_date",
             right_on="date",
-            how="left"
-        ).drop(columns=["date"])
-
+            direction="forward"   # 발표일 이후 첫 가용 가격
+        )
+        signals = signals.drop(columns=["date"])
         signals = signals[[
             "effective_date", "release_date", "month_start",
             "signal_type", "sp500_close", "ratio_z", "ratio_change_pct"
@@ -580,6 +622,159 @@ class MacroCrawler:
 
         # ✅ 그래프와 신호 테이블 반환
         return fig, ax1, signals
+    
+    def get_today_signal(self, today=None, market_tz="America/New_York"):
+        """
+        오늘 날짜 기준으로 매수/매도/대기 결정을 내려 반환.
+        - 발표시차(다음달 25일) + '발표 후 첫 거래일' 규칙 준수
+        - 일별 S&P500 종가를 기준 거래일 달력으로 사용
+        Returns: dict
+            {
+            'today': <Timestamp>,               # 시장 시간대 기준 '오늘'
+            'is_trading_day': bool,             # 오늘 미국 거래일 여부
+            'action': 'BUY' | 'SELL' | 'NONE',  # 오늘 주문 여부
+            'details': DataFrame(0~N rows)      # 오늘 유효 신호(있다면), 컬럼: 주문일/발표일/데이터기준일/신호/가격/지표값
+            'next_release': { 'release_date': ..., 'effective_date': ... }  # 다음 발표/주문일(참고)
+            }
+        """
+        import numpy as np
+        import pandas as pd
+
+        # ---- 오늘(미국 시장 시간대) 날짜 산정 ----
+        if today is None:
+            today_ts = pd.Timestamp.now(tz=market_tz).normalize()
+        else:
+            # today 인자가 naive면 시장시간대에 맞춰 tz-localize
+            t = pd.Timestamp(today)
+            if t.tzinfo is None:
+                t = t.tz_localize(market_tz)
+            today_ts = t.normalize()
+        today_naive = today_ts.tz_localize(None)
+
+        # ---- 월별 지표 테이블 만들기 (당신의 시차/라벨 보정 방식) ----
+        df = self.merge_m2_margin_sp500_abs().copy()
+        df["date"] = pd.to_datetime(df["date"]).sort_values().reset_index(drop=True)
+
+        m_src = (
+            df.loc[:, ["date", "margin_debt", "m2"]]
+            .dropna(subset=["margin_debt", "m2"])
+            .copy()
+        )
+
+        # 월초로 그룹 → 그 달의 마지막 관측값 사용(= 그 시점까지 '알고 있던' 값)
+        monthly = (
+            m_src.set_index("date")
+                .groupby(pd.Grouper(freq="MS"))
+                .last()
+                .dropna()
+                .reset_index()
+        )
+        # ★ 라벨 1개월 앞당겨 실제 '기준월' 맞춤
+        monthly["month_start"] = (monthly["date"] - pd.offsets.MonthBegin(1))
+
+        m_month = (
+            monthly[["month_start", "margin_debt", "m2"]]
+                .sort_values("month_start")
+                .reset_index(drop=True)
+        )
+
+        # ---- ratio, z, 모멘텀 ----
+        m_month["ratio"] = m_month["margin_debt"] / m_month["m2"]
+        m_month["ratio_ma"] = m_month["ratio"].rolling(window=36, min_periods=12).mean()
+        m_month["ratio_sd"] = m_month["ratio"].rolling(window=36, min_periods=12).std()
+        m_month["ratio_z"] = (m_month["ratio"] - m_month["ratio_ma"]) / m_month["ratio_sd"]
+        m_month["ratio_change_pct"] = m_month["ratio"].pct_change() * 100
+
+        # ---- 신호 규칙 ----
+        m_month["buy_signal"]  = (m_month["ratio_z"] < 1.2) & (m_month["ratio_change_pct"] > 0)
+        m_month["sell_signal"] = (m_month["ratio_change_pct"] < -7)
+
+        # ---- 발표일/주문일 ----
+        m_month["release_date"] = m_month["month_start"] + pd.offsets.MonthBegin(1) + pd.DateOffset(days=24)
+
+        # 일별 S&P 라인(거래일 달력)
+        sp_daily = self.get_sp500().copy()
+        sp_daily["date"] = pd.to_datetime(sp_daily["date"])
+        if "close" in sp_daily.columns:
+            sp_daily = sp_daily.rename(columns={"close": "sp500_close"})
+        elif "Close" in sp_daily.columns:
+            sp_daily = sp_daily.rename(columns={"Close": "sp500_close"})
+        sp_line = (
+            sp_daily[["date", "sp500_close"]]
+            .dropna()
+            .drop_duplicates(subset=["date"])
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
+        trade_days = sp_line[["date"]].copy()
+        sp_dates = trade_days["date"].to_numpy()
+
+        def next_trading_day(dt):
+            i = np.searchsorted(sp_dates, np.datetime64(dt), side="left")
+            return pd.NaT if i >= len(sp_dates) else pd.Timestamp(sp_dates[i])
+
+        m_month["effective_date"] = m_month["release_date"].apply(next_trading_day)
+
+        # ---- 오늘 신호만 추출 ----
+        sig = m_month.loc[
+            (m_month["effective_date"].notna()) &
+            (m_month["effective_date"].dt.normalize() == today_naive) &
+            (m_month["buy_signal"] | m_month["sell_signal"]),
+            ["month_start", "release_date", "effective_date", "ratio_z", "ratio_change_pct", "buy_signal", "sell_signal"]
+        ].copy()
+
+        # 가격 붙이기 (발표일이 거래일이 아닐 수 있으니 forward asof)
+        if not sig.empty:
+            sig = pd.merge_asof(
+                sig.sort_values("effective_date"),
+                sp_line.sort_values("date"),
+                left_on="effective_date",
+                right_on="date",
+                direction="forward"
+            ).drop(columns=["date"])
+            sig["signal_type"] = np.where(sig["buy_signal"], "BUY", "SELL")
+            sig = sig.rename(columns={
+                "effective_date": "주문일",
+                "release_date":  "발표일",
+                "month_start":   "데이터 기준일",
+                "ratio_change_pct": "전월대비 변화률(%)"
+            })[
+                ["주문일","발표일","데이터 기준일","signal_type","sp500_close","ratio_z","전월대비 변화률(%)"]
+            ]
+            sig["ratio_z"] = sig["ratio_z"].round(3)
+            sig["전월대비 변화률(%)"] = sig["전월대비 변화률(%)"].round(2)
+
+        # 오늘 미국 거래일 여부
+        is_trading_day = today_naive in set(trade_days["date"])
+
+        # Action: 오늘 주문일에 신호가 있으면 우선순위 SELL > BUY (보수적)
+        if not sig.empty:
+            if (sig["signal_type"] == "SELL").any():
+                action = "SELL"
+            elif (sig["signal_type"] == "BUY").any():
+                action = "BUY"
+            else:
+                action = "NONE"
+        else:
+            action = "NONE"
+
+        # 다음 발표 및 주문(참고 표시용)
+        future = m_month[m_month["effective_date"] > today_naive].copy()
+        next_rel = None
+        if not future.empty:
+            row = future.sort_values("effective_date").iloc[0]
+            next_rel = {
+                "release_date": row["release_date"],
+                "effective_date": row["effective_date"]
+            }
+
+        return {
+            "today": today_ts,
+            "is_trading_day": is_trading_day,
+            "action": action,
+            "details": sig,                 # DataFrame (0~N rows)
+            "next_release": next_rel        # dict or None
+        }
 
     # Clear
     def check_today_md_signal(self):
