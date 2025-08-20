@@ -477,8 +477,9 @@ class MacroCrawler:
         )
 
         # ★ 핵심: 이 값은 '이전 월'의 경제지표이므로 월 라벨을 1개월 뒤로 당겨서(−1M) 실제 기준월로 맞춤
-        monthly["month_start"] = (monthly["date"] - pd.offsets.MonthBegin(1))
-
+        # monthly["month_start"] = (monthly["date"] - pd.offsets.MonthBegin(1))
+        monthly["month_start"] = monthly["date"]
+                                  
         m_month = (
             monthly[["month_start", "margin_debt", "m2"]]
                 .sort_values("month_start")
@@ -2663,5 +2664,5 @@ if __name__ == "__main__":
     # pc_data = crawler.update_putcall_ratio()
     # bb_data = crawler.update_bull_bear_spread()
 
-    data = crawler.get_today_signal_with_m2_and_margin_debt()
+    data = crawler.plot_sp500_with_signals_and_graph()
     print(data)
