@@ -2,16 +2,22 @@
 import streamlit as st
 import pandas as pd
 import os, sys, importlib
+from pathlib import Path
 
 st.set_page_config(page_title="Today's Signal", page_icon="📅", layout="wide")
 
 # repo 루트(mcp) 경로 등록
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
+# repo 루트(mcp) 경로 등록
+sys.path.append(str(Path(__file__).parents[2]))
+
+from macro_crawling import MacroCrawler
 
 # 모듈 강제 리로드 → 최신 코드 반영
-import macro_crawling as mc
-mc = importlib.reload(mc)
-MacroCrawler = mc.MacroCrawler
+# import macro_crawling as mc
+# mc = importlib.reload(mc)
+# MacroCrawler = mc.MacroCrawler
 
 st.title("📅 Today’s Trading Signal")
 
@@ -43,3 +49,17 @@ st.dataframe(res["details"], use_container_width=True)
 nr = res.get("next_release")
 if nr:
     st.caption(f"다음 발표: {nr['release_date'].date()} → 주문일: {nr['effective_date'].date()} (예정)")
+
+
+
+st.subheader("오늘의 Bull-Bear 스프레드 시그널")
+
+sig = crawler.generate_bull_bear_signals()
+
+col1, col2, col3 = st.columns(3)
+col1.metric("시그널", f"{sig['icon']} {sig['signal']}")
+col2.metric("최근 날짜", sig["date"])
+col3.metric("최근 Spread", f"{sig['spread']:.3f}")
+
+st.write(sig["comment"])
+st.caption(f"임계치: Buy<{sig['thresholds']['buy_th']:.2f} / Sell>{sig['thresholds']['sell_th']:.2f}")

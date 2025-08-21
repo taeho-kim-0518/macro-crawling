@@ -132,3 +132,27 @@ st.dataframe(signals)
 
 # 렌더 후 닫기 (원하면)
 plt.close(fig)
+
+# =========================
+# Bull Bear Spread
+# =========================
+
+st.subheader("Bull-Bear Spread")
+
+fig, ax, events_df = crawler.plot_snp_with_bull_bear_signals_from_crawler(
+    buy_th=-0.2,
+    sell_th=0.4,
+)
+
+st.pyplot(fig, use_container_width=True)
+
+# ➜ 이벤트 표 렌더 (이 줄이 없어서 안 보였던 것)
+if events_df is not None and not events_df.empty:
+    st.dataframe(events_df, use_container_width=True)
+else:
+    st.info("표시할 이벤트가 없습니다. 임계치/기간을 조정해 보세요.")
+
+st.write("Bull-Bear Spread에 따른 주식 매수/매도 시그널")
+st.write("데이터가 2024년 9월부터 존재")
+st.write("지표가 -0.2 미만일 경우 매수")
+st.write("지표가 0.4 초과일 경우 매도")

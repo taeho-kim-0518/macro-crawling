@@ -120,6 +120,7 @@ class MacroCrawler:
             df['date'] = pd.to_datetime(df['date'])
             df['value'] = pd.to_numeric(df['value'], errors= 'coerce')
 
+
             return df
         
         except Exception as e:
@@ -161,6 +162,9 @@ class MacroCrawler:
 
         df['date'] = pd.to_datetime(df['date'])
         df['value'] = pd.to_numeric(df['value'], errors='coerce')
+
+        df.to_csv("cpi_data.csv", encoding='utf-8-sig')
+
         return df
     
     def get_cpi_yoy(self):
@@ -390,7 +394,7 @@ class MacroCrawler:
 
         # 필요한 컬럼만 반환
         df = df[['date', 'sp500_close']]
-        df.to_csv("sp500.csv", encoding='utf-8-sig')
+
         return df
     
     # Clear
@@ -783,6 +787,7 @@ class MacroCrawler:
             "details": details,    # 오늘 신호 or 최근 발표분 WAIT 1행
             "next_release": next_rel
         }
+    
     # Clear
     def check_today_md_signal(self):
         """
@@ -850,6 +855,7 @@ class MacroCrawler:
         df = pd.DataFrame(data['observations'])
         df['date'] = pd.to_datetime(df['date'])
         df['fed_funds_rate'] = pd.to_numeric(df['value'], errors='coerce')
+
         return df
 
     # Clear    
@@ -2622,37 +2628,160 @@ class MacroCrawler:
         else:
             raise ValueError("❌ Last Value 또는 Last Period를 찾을 수 없습니다.")
         
+    def plot_snp_with_bull_bear_signals_from_crawler(
+        self,
+        buy_th: float = -0.2,
+        sell_th: float = 0.4,
+        nearest_tolerance_days: int = 3,
+        align_direction: str = "nearest",  # "nearest" | "backward" | "forward"
+        show: bool = True,
+        buy_color: str = "green",
+        sell_color: str = "red",
+        save_csv_path: str | None = None,
+    ):
+        """
+        MacroCrawler.update_bull_bear_spread() + MacroCrawler.get_sp500() 사용.
+        - Bull-Bear spread < buy_th  → Buy 신호
+        - Bull-Bear spread > sell_th → Sell 신호
+        - 신호 날짜를 S&P500 최근접 거래일로 정렬(merge_asof)
+        - 반환: 신호별 이벤트 DataFrame
+        """
+        # 1) 데이터 로드
+        bb = pd.read_csv('bull_bear_spread.csv')  # 필요: ['date','spread']
+        snp = self.get_sp500()                # 필요: ['date','sp500_close']
+
+        # 2) 전처리
+        for df in (bb, snp):
+            if "date" not in df.columns:
+                raise ValueError("입력 데이터에 'date' 컬럼이 없습니다.")
+            df["date"] = pd.to_datetime(df["date"])
+            df.sort_values("date", inplace=True)
+            df.drop_duplicates(subset=["date"], keep="last", inplace=True)
+
+        if "spread" not in bb.columns:
+            cand = [c for c in bb.columns if "spread" in c.lower()]
+            if not cand:
+                raise ValueError("Bull-Bear 데이터에 'spread' 컬럼이 없습니다.")
+            bb = bb.rename(columns={cand[0]: "spread"})
+
+        if "sp500_close" not in snp.columns:
+            raise ValueError("S&P500 데이터에 'sp500_close' 컬럼이 없습니다.")
+
+        # 3) 신호 생성
+        buy_df  = bb[bb["spread"] < buy_th].copy()
+        sell_df = bb[bb["spread"] > sell_th].copy()
+
+        # 4) 최근접 거래일 매칭
+        snp_slim = snp[["date", "sp500_close"]].rename(columns={"sp500_close": "snp"})
+        buy_aligned = pd.merge_asof(
+            buy_df.sort_values("date"),
+            snp_slim.sort_values("date"),
+            on="date",
+            direction=align_direction,
+            tolerance=pd.Timedelta(days=nearest_tolerance_days),
+        ).dropna(subset=["snp"])
+        buy_aligned["signal"] = "buy"
+
+        sell_aligned = pd.merge_asof(
+            sell_df.sort_values("date"),
+            snp_slim.sort_values("date"),
+            on="date",
+            direction=align_direction,
+            tolerance=pd.Timedelta(days=nearest_tolerance_days),
+        ).dropna(subset=["snp"])
+        sell_aligned["signal"] = "sell"
+
+        # 5) 이벤트 DataFrame으로 결합 & 정렬
+        events_df = pd.concat([buy_aligned, sell_aligned], ignore_index=True)
+        events_df["threshold_buy"] = buy_th
+        events_df["threshold_sell"] = sell_th
+        events_df = events_df[["date", "signal", "snp", "spread", "threshold_buy", "threshold_sell"]]
+        events_df.sort_values("date", inplace=True)
+
+        # (선택) CSV 저장
+        # if save_csv_path:
+        #     events_df.to_csv(save_csv_path, index=False)
+
+        # 6) 시각화
+        fig, ax = plt.subplots(figsize=(14, 7))
+        ax.plot(snp["date"], snp["sp500_close"], label="S&P500")
+
+        # 색상: 매수=초록, 매도=빨강
+        if not events_df.empty:
+            buys  = events_df[events_df["signal"] == "buy"]
+            sells = events_df[events_df["signal"] == "sell"]
+            if not buys.empty:
+                ax.scatter(buys["date"], buys["snp"], marker="^", s=90,
+                        color=buy_color, edgecolor="k", linewidths=0.5,
+                        label=f"Buy (spread < {buy_th})", zorder=5)
+            if not sells.empty:
+                ax.scatter(sells["date"], sells["snp"], marker="v", s=90,
+                        color=sell_color, edgecolor="k", linewidths=0.5,
+                        label=f"Sell (spread > {sell_th})", zorder=5)
+
+        ax.set_title("S&P500 with Bull–Bear Spread Signals")
+        ax.set_xlabel("Date"); ax.set_ylabel("S&P500 Close")
+        ax.grid(True, alpha=0.3); ax.legend()
+
+        if show:
+            plt.show()
+
+        # ✅ dict 대신 DataFrame 반환
+        return fig, ax, events_df
+
 
     def generate_bull_bear_signals(self):
         """
         Bull-Bear Spread 기준 투자 전략
 
-        매수: spread < -20
-        매도: spread > 40
+        매수: spread < -0.2
+        매도: spread > 0.4
         """
-        df = self.update_bull_bear_spread()
-        df = df.copy()
+
+        buy_th = float(-0.2)
+        sell_th = float(0.4)
+
+        df = pd.read_csv("bull_bear_spread.csv")
+    
+        if df is None or df.empty:
+            raise ValueError("bull_bear_spread.csv가 비어 있거나 로드에 실패했습니다.")
+        if "date" not in df.columns or "spread" not in df.columns:
+            raise ValueError("bull_bear_spread.csv는 'date', 'spread' 컬럼을 포함해야 합니다.")
+        
+        df = df.dropna(subset=["date", "spread"]).copy()
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date").reset_index(drop=True)
+
         df_latest = df.iloc[-1]
-        df_latest["buy_signal"] = df_latest["spread"] < -0.2
-        df_latest["sell_signal"] = df_latest["spread"] > 0.4
+        spread_val = float(df_latest["spread"])
+        
+        buy_signal  = spread_val < buy_th
+        sell_signal = spread_val > sell_th
 
-        result = []
-
-        if df_latest['sell_signal'] == True:
-            result.append("🔥 광기 구간(투자자들이 지나치게 낙관적)")
-        elif df_latest['buy_signal'] == True:
-            result.append("✅ 역발상 매수 기회(투자자들이 공포를 느낌)")
+        if sell_signal:
+            signal = "SELL"
+            icon = "🔴"
+            comment = "🔥 광기 구간(투자자 과도한 낙관) → 차익실현/리스크 관리 고려"
+        elif buy_signal:
+            signal = "BUY"
+            icon = "🟢"
+            comment = "✅ 역발상 매수 구간(투자자 공포 심화) → 분할 매수 고려"
         else:
-            result.append("⚖️ 판단 유보(시장 혼조 또는 무관심)")
-       
+            signal = "HOLD"
+            icon = "⚪"
+            comment = "⚖️ 판단 유보(혼조/중립) → 관망 또는 보유 유지"
+
         return {
-            'date' : df_latest['date'],
-            'spread' : df_latest['spread'],
-            'comment' : result
-
+            "date": pd.to_datetime(df_latest["date"]).strftime("%Y-%m-%d"),
+            "spread": spread_val,
+            "buy_signal": bool(buy_signal),
+            "sell_signal": bool(sell_signal),
+            "signal": signal,
+            "icon": icon,
+            "comment": comment,
+            "thresholds": {"buy_th": buy_th, "sell_th": sell_th},
         }
-
-    # 40의 법칙
+        # 40의 법칙
 
 if __name__ == "__main__":
     crawler = MacroCrawler()
@@ -2664,5 +2793,5 @@ if __name__ == "__main__":
     # pc_data = crawler.update_putcall_ratio()
     # bb_data = crawler.update_bull_bear_spread()
 
-    data = crawler.plot_sp500_with_signals_and_graph()
+    data = crawler.generate_bull_bear_signals()
     print(data)
