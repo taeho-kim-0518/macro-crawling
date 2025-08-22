@@ -70,8 +70,8 @@ class ISMPMIUpdater:
         raw_df = self.df
 
         df = raw_df.copy()
-        df["Month/Year"] = raw_df["발표일"].apply(self.extract_date)
-        df["PMI"] = pd.to_numeric(raw_df["실제"], errors="coerce")
+        # df["Month/Year"] = raw_df["발표일"].apply(self.extract_date)
+        # df["PMI"] = pd.to_numeric(raw_df["실제"], errors="coerce")
         df = df.dropna(subset=["Month/Year", "PMI"])
         df = df[["Month/Year", "PMI"]].drop_duplicates()
         df = df.sort_values("Month/Year")

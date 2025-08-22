@@ -50,7 +50,7 @@ nr = res.get("next_release")
 if nr:
     st.caption(f"다음 발표: {nr['release_date'].date()} → 주문일: {nr['effective_date'].date()} (예정)")
 
-
+#--------------
 
 st.subheader("오늘의 Bull-Bear 스프레드 시그널")
 
@@ -58,8 +58,69 @@ sig = crawler.generate_bull_bear_signals()
 
 col1, col2, col3 = st.columns(3)
 col1.metric("시그널", f"{sig['icon']} {sig['signal']}")
-col2.metric("최근 날짜", sig["date"])
+col2.metric("최근 데이터 수집일", sig["date"])
 col3.metric("최근 Spread", f"{sig['spread']:.3f}")
 
 st.write(sig["comment"])
 st.caption(f"임계치: Buy<{sig['thresholds']['buy_th']:.2f} / Sell>{sig['thresholds']['sell_th']:.2f}")
+
+#---------------
+
+st.subheader("오늘의 Put-Call Ratio 시그널")
+
+pcr = crawler.decide_equity_pcr_today()
+
+col1, col2, col3 = st.columns(3)
+col1.metric("시그널", pcr['signal'][0])
+col2.metric("최근 데이터 수집일", pcr['date'][0].strftime('%Y-%m-%d'))
+col3.metric("최근 Put-Call Ratio", f"{pcr['equity_value'][0]:.2f}")
+
+#--------------
+
+st.subheader("이평선 상/하위 비중 분석")
+
+ma_above = crawler.interpret_ma_above_ratio()
+
+# col1, col2, col3, col4 = st.columns(4)
+# col1.metric("날짜", ma_above['date'][0])
+# col2.metric("시그널", ma_above['signal_50'][0])
+# col3.metric("50일 이평선 상위비율", ma_above['50_ma'][0])
+# col4.metric("설명", ma_above['comment_50'][0])
+
+# col5, col6, col7, col8 = st.columns(4)
+# col5.metric("날짜", ma_above['date'][0])
+# col6.metric("시그널", ma_above['signal_200'][0])
+# col7.metric("200일 이평선 상위비율", ma_above['200_ma'][0])
+# col8.metric("설명", ma_above['comment_200'][0])
+
+# 50일 이평선
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    st.markdown("**날짜**")
+    st.write(ma_above['date'][0])
+with col2:
+    st.markdown("**50일 시그널**")
+    st.write(ma_above['signal_50'][0])
+with col3:
+    st.markdown("**50일 이평선 상위비율**")
+    st.write(f"{ma_above['50_ma'][0]:.2f}%")
+with col4:
+    st.markdown("**설명**")
+    st.write(ma_above['comment_50'][0]) # st.write는 글자를 잘라내지 않습니다.
+
+st.markdown("---") # 시각적 구분선 추가
+
+# 200일 이평선
+col5, col6, col7, col8 = st.columns(4)
+with col5:
+    st.markdown("**날짜**")
+    st.write(ma_above['date'][0])
+with col6:
+    st.markdown("**200일 시그널**")
+    st.write(ma_above['signal_200'][0])
+with col7:
+    st.markdown("**200일 이평선 상위비율**")
+    st.write(f"{ma_above['200_ma'][0]:.2f}%")
+with col8:
+    st.markdown("**설명**")
+    st.write(ma_above['comment_200'][0]) # st.write는 글자를 잘라내지 않습니다.

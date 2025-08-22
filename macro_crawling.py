@@ -2008,7 +2008,141 @@ class MacroCrawler:
             print("📛 PutCall Ratio 업데이트 실패:", e)
 
         return putcall_df  
+    
+    def plot_sp500_with_pcr_signals(self, save_to: str | None = None):
+        """
+        Put/Call Ratio (equity_value) 기준으로 S&P500 종가 위에 매수/매도 신호를 표기.
+        동시에 신호 테이블(DataFrame)을 반환합니다.
 
+        Parameters
+        ----------
+        pcr_csv : str
+            'date, equity_value, index_value' 컬럼을 갖는 CSV 경로
+        buy_thr : float
+            매수 임계값 (equity_value > buy_thr)
+        sell_thr : float
+            매도 임계값 (equity_value < sell_thr)
+        save_to : str | None
+            그래프 저장 경로. None이면 저장하지 않음.
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+        signals_df : pandas.DataFrame  # ['date','sp500_close','equity_value','signal']
+        """
+
+        buy_thr = 1.5
+        sell_thr = 0.4
+
+        # ---------- 1) S&P500 일별 라인 구성 ----------
+        sp_daily = self.get_sp500().copy()  # 반드시 일별 데이터 반환
+        sp_daily["date"] = pd.to_datetime(sp_daily["date"])
+
+        # 컬럼 표준화
+        if "close" in sp_daily.columns:
+            sp_daily = sp_daily.rename(columns={"close": "sp500_close"})
+        elif "Close" in sp_daily.columns:
+            sp_daily = sp_daily.rename(columns={"Close": "sp500_close"})
+        # 이미 'sp500_close'면 그대로 사용
+
+        sp_line = (
+            sp_daily[["date", "sp500_close"]]
+            .dropna()
+            .drop_duplicates(subset=["date"])
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
+
+        # ---------- 2) PCR 로드 (형식 고정) ----------
+        pcr = pd.read_csv('put_call_ratio.csv')
+        expected_cols = {"date", "equity_value", "index_value"}
+        if set(pcr.columns) != expected_cols:
+            raise ValueError(
+                f"PCR 컬럼은 정확히 {expected_cols} 이어야 합니다. 현재: {list(pcr.columns)}"
+            )
+
+        pcr["date"] = pd.to_datetime(pcr["date"])
+        # 숫자형 보정
+        pcr["equity_value"] = pd.to_numeric(pcr["equity_value"], errors="coerce")
+
+        # ---------- 3) 병합 & 신호 계산 ----------
+        df = sp_line.merge(pcr[["date", "equity_value"]], on="date", how="left")
+
+        buy_mask = df["equity_value"] > buy_thr
+        sell_mask = df["equity_value"] < sell_thr
+
+        signals_df = df.loc[buy_mask | sell_mask, ["date", "sp500_close", "equity_value"]].copy()
+        signals_df["signal"] = np.where(signals_df["equity_value"] > 1.5, "BUY", "SELL")
+        signals_df = signals_df.sort_values("date").reset_index(drop=True)
+
+        # ---------- 4) 시각화 ----------
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.plot(df["date"], df["sp500_close"], label="S&P 500")
+        ax.scatter(df.loc[buy_mask, "date"], df.loc[buy_mask, "sp500_close"],
+                   marker="^", s=64, label=f"BUY (PCR>{buy_thr})")
+        ax.scatter(df.loc[sell_mask, "date"], df.loc[sell_mask, "sp500_close"],
+                   marker="v", s=64, label=f"SELL (PCR<{sell_thr})")
+
+        ax.set_title("S&P 500 with Put/Call Ratio (Equity) Signals")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("S&P 500 Close")
+        ax.legend()
+        ax.grid(True)
+        fig.tight_layout()
+
+        if save_to:
+            fig.savefig(save_to, dpi=160)
+
+        return fig, signals_df
+
+    def decide_equity_pcr_today(self):
+        """
+        put_call_ratio.csv의 가장 최신 관측치를 사용해
+        오늘(최근일) 매수/매도/HOLD 시그널을 결정하여 DataFrame으로 반환.
+
+        Returns
+        -------
+        pandas.DataFrame
+            columns = ['date', 'equity_value', 'signal'] (1행)
+        """
+        
+        
+        buy_thr: float = 1.5
+        sell_thr: float = 0.4
+
+        df = pd.read_csv("put_call_ratio.csv")
+        required = {"date", "equity_value", "index_value"}
+        if not required.issubset(df.columns):
+            raise ValueError(f"put_call_ratio.csv must contain columns: {required}. Got: {list(df.columns)}")
+
+        # 정리
+        df = df.copy()
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        df["equity_value"] = pd.to_numeric(df["equity_value"], errors="coerce")
+        df = df.dropna(subset=["date", "equity_value"]).sort_values("date").reset_index(drop=True)
+
+        if df.empty:
+            # 비어있으면 빈 DF 반환
+            return pd.DataFrame(columns=["date", "equity_value", "signal"])
+
+        last = df.iloc[-1]
+        val = float(last["equity_value"])
+
+        if val > buy_thr:
+            signal = "BUY"
+        elif val < sell_thr:
+            signal = "SELL"
+        else:
+            signal = "HOLD"
+
+        out = pd.DataFrame(
+            {
+                "date": [last["date"].normalize()],   # 날짜만 보기 좋게
+                "equity_value": [round(val, 2)],
+                "signal": [signal],
+            }
+        )
+        return out
 
     def check_put_call_ratio_warning(self):
         """
@@ -2018,7 +2152,7 @@ class MacroCrawler:
         ratio_type : equity, index 둘 중 하나 입력
         """
 
-        put_call_ratio = self.update_putcall_ratio()
+        put_call_ratio = pd.read_csv('put_call_ratio.csv')
         putcall_data_today = put_call_ratio.iloc[-1]
         print("data : ", putcall_data_today)
         date = putcall_data_today['date']
@@ -2031,7 +2165,7 @@ class MacroCrawler:
     
         if value > 1.5:
             result.append("📉 Equity: 공포심 과다 → 반등 가능성 (매수 시점 탐색)")
-        elif value < 0.5:
+        elif value < 0.4:
             result.append("🚨 Equity: 과열 탐욕 상태 → 매도 경고 또는 조정 가능성")
         else:
             result.append("⚖️ Equity: 중립 구간")
@@ -2487,28 +2621,52 @@ class MacroCrawler:
         """
 
         data = self.get_ma_above_ratio()
-        
-        messages = []
+
+        date = data['date']
+
 
         # 50-day MA 해석
         ma_50 = float(data.get("50-day MA", "0%").replace("%", ""))
         if ma_50 < 30:
-            messages.append(f"✅ 단기적 매수 추천: 50일 이평선 상회 비율이 {ma_50:.2f}%로 낮습니다.")
+            signal_50 = "BUY"
+            icon_50 = "✅"
+            commnet_50 = f"✅ 단기적 매수 추천: 50일 이평선 상회 비율이 {ma_50:.2f}%로 낮습니다."
         elif ma_50 >= 70:
-            messages.append(f"🚨 단기적 매도 신호: 50일 이평선 상회 비율이 {ma_50:.2f}%로 과열 구간입니다.")
+            signal_50 = "SELL"
+            icon_50 = "🚨"
+            comment_50 = f"🚨 단기적 매도 신호: 50일 이평선 상회 비율이 {ma_50:.2f}%로 과열 구간입니다."
+        else:
+            signal_50 = "HOLD"
+            icon_50 = "⚖️"
+            comment_50 = f"⚖️ 현재는 뚜렷한 매수/매도 신호가 없습니다. (50일: {ma_50:.2f}%"
 
         # 200-day MA 해석
         ma_200 = float(data.get("200-day MA", "0%").replace("%", ""))
         if ma_200 < 30:
-            messages.append(f"✅ 장기적 매수 추천: 200일 이평선 상회 비율이 {ma_200:.2f}%로 낮습니다.")
+            signal_200 = "BUY"
+            icon_200 = "✅"
+            comment_200 = f"✅ 장기적 매수 추천: 200일 이평선 상회 비율이 {ma_200:.2f}%로 낮습니다."
         elif ma_200 >= 70:
-            messages.append(f"🚨 장기적 매도 신호: 200일 이평선 상회 비율이 {ma_200:.2f}%로 과열 구간입니다.")
+            signal_200 = "SELL"
+            icon_200 = "🚨"
+            comment_200 = f"🚨 장기적 매도 신호: 200일 이평선 상회 비율이 {ma_200:.2f}%로 과열 구간입니다."
+        else:
+            signal_200 = "HOLD"
+            icon_200 = "⚖️"
+            comment_200 = f"⚖️ 현재는 뚜렷한 매수/매도 신호가 없습니다. 200일: {ma_200:.2f}%)"
 
-        # 신호 없을 때
-        if not messages:
-            messages.append(f"⚖️ 현재는 뚜렷한 매수/매도 신호가 없습니다. (50일: {ma_50:.2f}%, 200일: {ma_200:.2f}%)")
+        # 딕셔너리를 활용하여 단일 행의 DataFrame 생성
+        ma_result = pd.DataFrame([{
+            'date': date,
+            'signal_50': signal_50,
+            '50_ma': ma_50,
+            'comment_50': comment_50,
+            'signal_200': signal_200,
+            '200_ma': ma_200,
+            'comment_200': comment_200
+        }])
 
-        return messages
+        return ma_result
     
 
     def analyze_disparity_with_ma(self):
@@ -2793,5 +2951,5 @@ if __name__ == "__main__":
     # pc_data = crawler.update_putcall_ratio()
     # bb_data = crawler.update_bull_bear_spread()
 
-    data = crawler.generate_bull_bear_signals()
+    data = crawler.interpret_ma_above_ratio()
     print(data)

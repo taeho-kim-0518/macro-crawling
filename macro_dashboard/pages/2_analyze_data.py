@@ -156,3 +156,24 @@ st.write("Bull-Bear Spread에 따른 주식 매수/매도 시그널")
 st.write("데이터가 2024년 9월부터 존재")
 st.write("지표가 -0.2 미만일 경우 매수")
 st.write("지표가 0.4 초과일 경우 매도")
+
+# =========================
+# Put Call Ratio
+# =========================
+
+st.subheader("Put-Call Ratio")
+
+fig, signals_df = crawler.plot_sp500_with_pcr_signals()
+
+st.pyplot(fig, use_container_width=True)
+
+# ➜ 이벤트 표 렌더 (이 줄이 없어서 안 보였던 것)
+if signals_df is not None and not events_df.empty:
+    st.dataframe(signals_df, use_container_width=True)
+else:
+    st.info("표시할 이벤트가 없습니다. 임계치/기간을 조정해 보세요.")
+
+st.write("Put-Call Ratio에 따른 주식 매수/매도 시그널")
+st.write("데이터가 2025-05-15부터 존재")
+st.write("지표가 1.5 초과일 경우 매수")
+st.write("지표가 0.4 미만일 경우 매도")
