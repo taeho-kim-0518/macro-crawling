@@ -2723,7 +2723,7 @@ class MacroCrawler:
                 return "🔥 광기 구간"
         
 
-        ma_depart_result = pd.DataFrame([{
+        ma_disparity_result = pd.DataFrame([{
             'date': date,
             'sp500' : close,
             '50-day MA': round(ma_50, 2),
@@ -2735,7 +2735,7 @@ class MacroCrawler:
         }])
 
 
-        return ma_depart_result
+        return ma_disparity_result
 
 
       # Clear 주별 데이터 - 1주일 딜레이
@@ -2955,5 +2955,5 @@ if __name__ == "__main__":
     # pc_data = crawler.update_putcall_ratio()
     # bb_data = crawler.update_bull_bear_spread()
 
-    data = crawler.analyze_disparity_with_ma()
+    data = crawler.get_us_leading_index_actual()
     print(data)
