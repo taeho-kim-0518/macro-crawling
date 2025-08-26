@@ -2721,17 +2721,21 @@ class MacroCrawler:
                 return "⚠️ 장기 과열"
             else:
                 return "🔥 광기 구간"
+        
 
-        return {
-            'date': date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else str(date),
-            'sp500_close': round(close, 2),
+        ma_depart_result = pd.DataFrame([{
+            'date': date,
+            'sp500' : close,
             '50-day MA': round(ma_50, 2),
-            '200-day MA': round(ma_200, 2),
             '50-day disparity (%)': round(disparity_50, 2),
+            'comment_50': interpret_disparity_50(disparity_50),
+            '200-day MA': round(ma_200, 2),
             '200-day disparity (%)': round(disparity_200, 2),
-            'short_term_status': interpret_disparity_50(disparity_50),
-            'long_term_status': interpret_disparity_200(disparity_200)
-        }
+            'comment_200': interpret_disparity_200(disparity_200)
+        }])
+
+
+        return ma_depart_result
 
 
       # Clear 주별 데이터 - 1주일 딜레이
@@ -2951,5 +2955,5 @@ if __name__ == "__main__":
     # pc_data = crawler.update_putcall_ratio()
     # bb_data = crawler.update_bull_bear_spread()
 
-    data = crawler.interpret_ma_above_ratio()
+    data = crawler.analyze_disparity_with_ma()
     print(data)

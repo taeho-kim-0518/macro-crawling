@@ -124,3 +124,43 @@ with col7:
 with col8:
     st.markdown("**설명**")
     st.write(ma_above['comment_200'][0]) # st.write는 글자를 잘라내지 않습니다.
+
+    #--------------
+st.subheader("이평선 이격도 분석")
+
+ma_disparity = crawler.analyze_disparity_with_ma()
+
+# 일자 및 기준 지표
+col1, col2 = st.columns(2)
+with col1:
+    st.markdown("**날짜**")
+    st.write(ma_disparity['date'][0])
+with col2:
+    st.markdown("**S&P500 수치**")
+    st.write(ma_disparity['sp500'][0])
+
+# 50일선
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.markdown("**50일 기준 지수**")
+    st.write(ma_disparity['50-day MA'][0])
+with col2:
+    st.markdown("**50일 이격도**")
+    st.write(ma_disparity['50-day disparity (%)'][0])
+with col3:
+    st.markdown("**설명**")
+    st.write(ma_disparity['comment_50'][0]) # st.write는 글자를 잘라내지 않습니다.
+
+# 200일선
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.markdown("**200일 기준 지수**")
+    st.write(ma_disparity['200-day MA'][0])
+with col2:
+    st.markdown("**200일 이격도**")
+    st.write(ma_disparity['200-day disparity (%)'][0])
+with col3:
+    st.markdown("**설명**")
+    st.write(ma_disparity['comment_200'][0]) # st.write는 글자를 잘라내지 않습니다.
