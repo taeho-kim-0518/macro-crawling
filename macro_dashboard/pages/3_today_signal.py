@@ -35,7 +35,7 @@ crawler = st.session_state.crawler
 
 res = crawler.get_today_signal_with_m2_and_margin_debt()
 
-st.subheader("오늘 주문 판단")
+st.subheader("M2/Margin_Debt에 따른 매수/매도 판단")
 if res["action"] == "BUY":
     st.success("✅ 오늘 매수")
 elif res["action"] == "SELL":
@@ -169,6 +169,7 @@ with col3:
 st.subheader("미국선행경기지수 + PMI")
 
 lei_pmi_signal = crawler.decide_today_lei_signal_min()
+buy_delta_pp = 0.25
 
 c1, c2, c3 = st.columns(3)
 with c1:
@@ -193,3 +194,5 @@ with c2:
 with c3:
     st.markdown("**6개월간 금리 변동**")
     st.write(lei_pmi_signal["Change_rate"])
+
+st.write(f"임계치 : pmi > 50 + lei > 100 + change_rate : {buy_delta_pp}")
