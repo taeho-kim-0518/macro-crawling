@@ -125,7 +125,7 @@ with col8:
     st.markdown("**설명**")
     st.write(ma_above['comment_200'][0]) # st.write는 글자를 잘라내지 않습니다.
 
-    #--------------
+#--------------
 st.subheader("이평선 이격도 분석")
 
 ma_disparity = crawler.analyze_disparity_with_ma()
@@ -164,3 +164,32 @@ with col2:
 with col3:
     st.markdown("**설명**")
     st.write(ma_disparity['comment_200'][0]) # st.write는 글자를 잘라내지 않습니다.
+
+#--------------
+st.subheader("미국선행경기지수 + PMI")
+
+lei_pmi_signal = crawler.decide_today_lei_signal_min()
+
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.markdown("**오늘 날짜**")
+    st.write(lei_pmi_signal["오늘 날짜"])
+with c2:
+    st.markdown("**시그널**")
+    sig = lei_pmi_signal["시그널"]
+    st.markdown(":red[**BUY**]" if sig == "BUY" else ":gray[HOLD]")
+with c3:
+    st.markdown("**데이터 기준일**")
+    st.write(lei_pmi_signal["데이터 기준일"])
+
+# 2행
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.markdown("**미국선행경기지수(LEI)**")
+    st.write(lei_pmi_signal["LEI"])
+with c2:
+    st.markdown("**ISM PMI**")
+    st.write(lei_pmi_signal["PMI"])
+with c3:
+    st.markdown("**6개월간 금리 변동**")
+    st.write(lei_pmi_signal["Change_rate"])

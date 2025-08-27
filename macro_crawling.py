@@ -30,6 +30,7 @@ from ism_pmi_updater import ISMPMIUpdater
 from SNP_forward_pe_updater import forwardpe_updater
 from putcall_ratio_updater import PutCallRatioUpdater
 from bullbear_spread_updater import BullBearSpreadUpdater
+from lei_updater import LEIUpdater
 
 # 한글 폰트 설정 (Windows에서는 기본적으로 'Malgun Gothic' 가능)
 mpl.rcParams['font.family'] = 'Malgun Gothic'  # 또는 'NanumGothic', 'AppleGothic' (Mac)
@@ -62,6 +63,8 @@ class MacroCrawler:
         self.put_call_ratio_updater = PutCallRatioUpdater("put_call_ratio.csv")
         # Bull Bear Spread 업데이트기 연결
         self.bull_bear_spread_updater = BullBearSpreadUpdater("bull_bear_spread.csv")
+        # LEI 업데이트기 연결
+        self.lei_updater = LEIUpdater("lei_data.csv")
 
 
     # Clear 1개월 딜레이 데이터
@@ -1422,6 +1425,328 @@ class MacroCrawler:
             print(f"데이터를 파싱하는 중 오류 발생: {e}")
         
         return extracted_data[0]
+    
+    # LEI 데이터 불러오기
+    def update_lei_data(self):
+        '''
+        로컬에 저장된 lei 파일 불러오기
+        '''
+        try:
+            lei_df = self.lei_updater.update_csv()
+            print("✅ LEI CSV 업데이트 완료")
+        except Exception as e:
+            print("📛 LEI CSV 업데이트 실패:", e)
+
+        return lei_df    
+
+    def plot_sp500_with_lei_signals(
+        self,
+        lei_csv_path: str = "lei_data.csv",
+        pmi_csv_path: str = "pmi_data.csv",
+        sell_delta_pp: float = -0.5,   # 6개월 금리 변화 임계값 (매도) : ≤ -0.5%p
+        buy_delta_pp: float = 0.25,     # 6개월 금리 변화 임계값 (매수) : ≥ +0.5%p
+        lag_months: int = 1,           # 발표시차(전월값을 다음달 1일에 알 수 있음)
+        show_components: bool = False, # True면 LEI/PMI/Fed 라인도 보조축에 함께 그림
+        save_to: str | None = None     # 파일로 저장하고 싶으면 경로 지정
+    ):
+        """
+        S&P500 월초(첫 거래일) 종가에 매수/매도 마크업을 찍는 함수
+        - LEI/PMI는 CSV에서 읽고, 기준금리는 self.get_fed_funds_rate()로 호출
+        - 발표시차(전월 데이터를 다음 달 1일에 확인)를 반영하여 신호를 '발표월의 월초 종가'에 표시
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+        signals : pd.DataFrame  # 신호 발생 행만 모은 요약 테이블
+        """
+
+        # 1) 데이터 로드 ----------------------------------------------------------
+        # S&P500 (일별) → 월초 종가(첫 거래일)로 변환
+        sp = self.get_sp500().copy()
+        sp["date"] = pd.to_datetime(sp["date"])
+        sp = sp.sort_values("date")
+        # 월초 빈(label)으로 리샘플하면 해당 월의 첫 관측치가 들어감
+        sp_month_start = (
+            sp.set_index("date")
+            .resample("MS")            # Month Start
+            .first()
+            .rename_axis("date")
+            .reset_index()[["date", "sp500_close"]]
+        )
+        sp_month_start["ym"] = sp_month_start["date"].dt.to_period("M")
+
+        # LEI
+        lei = pd.read_csv(lei_csv_path)
+        # 컬럼 유연 처리
+        if "date" not in lei.columns:
+            raise ValueError("lei_data.csv에는 'date' 컬럼이 필요합니다.")
+        lei["date"] = pd.to_datetime(lei["date"])
+        if "LEI" not in lei.columns:
+            # 일반적으로 'value'로 들어옴
+            if "value" in lei.columns:
+                lei = lei.rename(columns={"value": "LEI"})
+            else:
+                raise ValueError("lei_data.csv에서 LEI 값을 찾을 수 없습니다. ('LEI' 또는 'value' 컬럼 필요)")
+        # 월말 기준 대표값
+        lei_m = (lei.set_index("date").resample("M").last().reset_index()[["date", "LEI"]])
+        lei_m["ym"] = lei_m["date"].dt.to_period("M")
+
+        # PMI
+        pmi = pd.read_csv(pmi_csv_path)
+        # 날짜 컬럼 유연 처리
+        if "date" in pmi.columns:
+            pmi["date"] = pd.to_datetime(pmi["date"])
+        elif "Month/Year" in pmi.columns:
+            pmi["date"] = pd.to_datetime(pmi["Month/Year"])
+        elif "DATE" in pmi.columns:
+            pmi["date"] = pd.to_datetime(pmi["DATE"])
+        else:
+            raise ValueError("pmi_data.csv에 날짜 컬럼이 없습니다. (date / Month/Year / DATE 중 하나)")
+        # 값 컬럼 유연 처리
+        if "PMI" not in pmi.columns:
+            if "value" in pmi.columns:
+                pmi = pmi.rename(columns={"value": "PMI"})
+            else:
+                raise ValueError("pmi_data.csv에서 PMI 값을 찾을 수 없습니다. ('PMI' 또는 'value')")
+        pmi["PMI"] = pd.to_numeric(pmi["PMI"], errors="coerce")
+        pmi_m = (pmi.set_index("date").resample("M").last().reset_index()[["date", "PMI"]])
+        pmi_m["ym"] = pmi_m["date"].dt.to_period("M")
+
+        # Fed Funds (FRED API)
+        fed = self.get_fed_funds_rate().copy()
+        fed["date"] = pd.to_datetime(fed["date"])
+        fed["fed_funds_rate"] = pd.to_numeric(fed["fed_funds_rate"], errors="coerce")
+        # 월말 대표값
+        fed_m = (
+            fed.set_index("date")
+            .resample("M")
+            .last()
+            .reset_index()[["date", "fed_funds_rate"]]
+            .rename(columns={"fed_funds_rate": "FEDFUNDS"})
+        )
+        fed_m["ym"] = fed_m["date"].dt.to_period("M")
+
+        # 2) 병합 (월 기준) -------------------------------------------------------
+        df = (
+            sp_month_start[["date", "ym", "sp500_close"]]
+            .merge(lei_m[["ym", "LEI"]], on="ym", how="left")
+            .merge(pmi_m[["ym", "PMI"]], on="ym", how="left")
+            .merge(fed_m[["ym", "FEDFUNDS"]], on="ym", how="left")
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
+
+        # 3) 금리 6개월 변화(퍼센트 포인트) + 발표시차 반영 --------------------------
+        df["FEDFUNDS_6M_chg"] = df["FEDFUNDS"] - df["FEDFUNDS"].shift(6)
+
+        # 발표시차: 전월 데이터를 다음달 1일에 알 수 있으므로 'lag_months'만큼 시프트
+        df["LEI_used"] = df["LEI"].shift(lag_months)
+        df["PMI_used"] = df["PMI"].shift(lag_months)
+        df["FEDFUNDS_6M_chg_used"] = df["FEDFUNDS_6M_chg"].shift(lag_months)
+
+        # 4) 신호 정의 ------------------------------------------------------------
+        # sell_mask = (df["LEI_used"] < 100) & (df["PMI_used"] < 50) & (df["FEDFUNDS_6M_chg_used"] <= sell_delta_pp)
+        buy_mask  = (df["LEI_used"] > 100) & (df["PMI_used"] > 50) & (df["FEDFUNDS_6M_chg_used"] >= buy_delta_pp)
+
+        # df["sell_signal"] = sell_mask.fillna(False)
+        df["buy_signal"]  = buy_mask.fillna(False)
+
+        # 5) 플롯 -----------------------------------------------------------------
+        fig, ax1 = plt.subplots(figsize=(13, 6))
+        ax1.plot(df["date"], df["sp500_close"], label="S&P500 (월초 종가)", linewidth=1.6)
+
+        # 매수/매도 마크업
+        buy_pts  = df[df["buy_signal"]]
+        # sell_pts = df[df["sell_signal"]]
+        ax1.scatter(buy_pts["date"],  buy_pts["sp500_close"],  marker="^", s=60, color = 'red', label=f"Buy (LEI>100 & PMI>50 & 6M ≥ {buy_delta_pp:+.1f}pp)")
+        # ax1.scatter(sell_pts["date"], sell_pts["sp500_close"], marker="v", s=60, color = 'navy', label=f"Sell (LEI<100 & PMI<50 & 6M ≤ {sell_delta_pp:+.1f}pp)")
+
+        ax1.set_title("S&P500 Signals at Month Start (Prev-Month Announced Data)")
+        ax1.set_ylabel("S&P500")
+        ax1.legend(loc="upper left")
+
+        # 보조축에 구성요소도 보고 싶다면
+        if show_components:
+            ax2 = ax1.twinx()
+            ax2.plot(df["date"], df["LEI"], alpha=0.6, label="LEI")
+            ax2.set_ylabel("LEI")
+            # PMI는 정규화해서 같은 축에
+            pmi_norm = (df["PMI"] - df["PMI"].min()) / (df["PMI"].max() - df["PMI"].min()) * 100
+            ax2.plot(df["date"], pmi_norm, linestyle="--", alpha=0.6, label="PMI (norm)")
+            # Fed Funds는 바깥쪽 축
+            ax3 = ax1.twinx()
+            ax3.spines["right"].set_position(("outward", 60))
+            ax3.plot(df["date"], df["FEDFUNDS"], linestyle=":", alpha=0.7, label="Fed Funds (%)")
+            # 범례 합치기
+            lines, labels = [], []
+            for ax in [ax1, ax2, ax3]:
+                l, lab = ax.get_legend_handles_labels()
+                lines += l; labels += lab
+            ax1.legend(lines, labels, loc="upper left")
+
+        fig.tight_layout()
+        if save_to:
+            fig.savefig(save_to, dpi=150)
+
+        plt.show()
+
+        # 6) 신호 테이블 반환 ------------------------------------------------------
+        signals = df.loc[df["buy_signal"],
+                        ["date", "sp500_close", "LEI_used", "PMI_used", "FEDFUNDS_6M_chg_used",
+                        "buy_signal"]].reset_index(drop=True)
+        
+        # 주문일 = 실제 월초 종가가 찍힌 날짜
+        signals = signals.rename(columns={"date": "주문일"})
+
+        # 데이터 기준일 = 주문일에서 lag_months 만큼 당긴 달
+        signals["데이터 기준일"] = signals["주문일"] - pd.DateOffset(months=lag_months)
+
+        # 보기 좋게 컬럼 순서 정리
+        signals = signals[["데이터 기준일", "주문일", "sp500_close",
+                        "LEI_used", "PMI_used", "FEDFUNDS_6M_chg_used",
+                        "buy_signal"]]
+        
+        signals = signals.loc[signals['buy_signal'] == True]
+
+        return fig, signals
+
+    def decide_today_lei_signal_min(
+        self,
+        lei_csv_path: str = "lei_data.csv",
+        pmi_csv_path: str = "pmi_data.csv",
+        buy_delta_pp: float = 0.25,
+        lag_months: int = 1,
+        market_tz: str = "America/New_York",  # S&P500 거래월 판단용
+        today_tz: str = "Asia/Seoul",         # "오늘 날짜" 표기용
+    ):
+        """
+        오늘 기준(로컬 today_tz)으로, 이번 달 주문일(미국장 월초 첫 거래일)에
+        매수 신호가 있는지 요약해서 반환.
+
+        return: dict (키 순서 유지)
+        - 오늘 날짜
+        - 시그널          ("매수" | "대기" | "데이터없음")
+        - 주문일          (이번 달 월초 첫 거래일)
+        - 데이터 기준일    (= 주문일 - lag_months개월)
+        - LEI             (LEI_used)
+        - PMI             (PMI_used)
+        - 6개월 간 금리변동 폭 (FEDFUNDS_6M_chg_used)
+        """
+        import pandas as pd
+        import numpy as np
+
+        # --- 오늘 날짜(로컬 표기를 위해 today_tz 사용)
+        today_local = pd.Timestamp.now(tz=today_tz).date()
+
+        # --- S&P500: 일별 → 월초(첫 거래일)
+        sp = self.get_sp500().copy()
+        sp["date"] = pd.to_datetime(sp["date"])
+        sp = sp.sort_values("date")
+        sp_month_start = (
+            sp.set_index("date").resample("MS").first().rename_axis("date").reset_index()
+        )
+        sp_month_start["ym"] = sp_month_start["date"].dt.to_period("M")
+
+        # --- LEI
+        lei = pd.read_csv(lei_csv_path)
+        if "date" not in lei.columns:
+            raise ValueError("lei_data.csv에는 'date' 컬럼이 필요합니다.")
+        lei["date"] = pd.to_datetime(lei["date"])
+        if "LEI" not in lei.columns:
+            if "value" in lei.columns:
+                lei = lei.rename(columns={"value": "LEI"})
+            else:
+                raise ValueError("lei_data.csv에서 LEI 값을 찾을 수 없습니다. ('LEI' 또는 'value')")
+        lei_m = lei.set_index("date").resample("M").last().reset_index()[["date", "LEI"]]
+        lei_m["ym"] = lei_m["date"].dt.to_period("M")
+
+        # --- PMI
+        pmi = pd.read_csv(pmi_csv_path)
+        if "date" in pmi.columns:
+            pmi["date"] = pd.to_datetime(pmi["date"])
+        elif "Month/Year" in pmi.columns:
+            pmi["date"] = pd.to_datetime(pmi["Month/Year"])
+        elif "DATE" in pmi.columns:
+            pmi["date"] = pd.to_datetime(pmi["DATE"])
+        else:
+            raise ValueError("pmi_data.csv에 날짜 컬럼이 없습니다. (date / Month/Year / DATE 중 하나)")
+        if "PMI" not in pmi.columns:
+            if "value" in pmi.columns:
+                pmi = pmi.rename(columns={"value": "PMI"})
+            else:
+                raise ValueError("pmi_data.csv에서 PMI 값을 찾을 수 없습니다. ('PMI' 또는 'value')")
+        pmi["PMI"] = pd.to_numeric(pmi["PMI"], errors="coerce")
+        pmi_m = pmi.set_index("date").resample("M").last().reset_index()[["date", "PMI"]]
+        pmi_m["ym"] = pmi_m["date"].dt.to_period("M")
+
+        # --- Fed Funds (월말 대표값 → 6개월 변화)
+        fed = self.get_fed_funds_rate().copy()
+        fed["date"] = pd.to_datetime(fed["date"])
+        fed["fed_funds_rate"] = pd.to_numeric(fed["fed_funds_rate"], errors="coerce")
+        fed_m = (
+            fed.set_index("date").resample("M").last().reset_index()[["date", "fed_funds_rate"]]
+            .rename(columns={"fed_funds_rate": "FEDFUNDS"})
+        )
+        fed_m["ym"] = fed_m["date"].dt.to_period("M")
+
+        # --- 병합(월 기준) & 발표시차 반영
+        df = (
+            sp_month_start[["date", "ym", "sp500_close"]]
+            .merge(lei_m[["ym", "LEI"]], on="ym", how="left")
+            .merge(pmi_m[["ym", "PMI"]], on="ym", how="left")
+            .merge(fed_m[["ym", "FEDFUNDS"]], on="ym", how="left")
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
+        df["FEDFUNDS_6M_chg"] = df["FEDFUNDS"] - df["FEDFUNDS"].shift(6)
+
+        df["LEI_used"] = df["LEI"].shift(lag_months)
+        df["PMI_used"] = df["PMI"].shift(lag_months)
+        df["FEDFUNDS_6M_chg_used"] = df["FEDFUNDS_6M_chg"].shift(lag_months)
+
+        buy_mask = (
+            (df["LEI_used"] > 100)
+            & (df["PMI_used"] > 50)
+            & (df["FEDFUNDS_6M_chg_used"] >= buy_delta_pp)
+        )
+        df["buy_signal"] = buy_mask.fillna(False)
+
+        # --- 이번 달 주문일(미국장 기준 월) 결정
+        now_us = pd.Timestamp.now(tz=market_tz)
+        current_period_us = now_us.to_period("M")
+
+        this_row = df[df["date"].dt.to_period("M") == current_period_us].tail(1)
+        if this_row.empty:
+            # 이번 달 첫 거래일 데이터가 아직 없거나 소스가 비어있는 경우
+            return {
+                "오늘 날짜": today_local,
+                "시그널": "데이터없음",
+                "주문일": None,
+                "데이터 기준일": None,
+                "LEI": None,
+                "PMI": None,
+                "6개월 간 금리변동 폭": None,
+            }
+
+        row = this_row.iloc[0]
+        order_day = pd.to_datetime(row["date"]).date()
+        base_day = (pd.to_datetime(row["date"]) - pd.DateOffset(months=lag_months)).date()
+
+        # 안전한 소수/결측 처리
+        def _fmt(x, nd=2):
+            v = None if pd.isna(x) else float(x)
+            return None if v is None else (round(v, nd) if nd is not None else v)
+
+        result = {
+            "오늘 날짜": today_local,
+            "시그널": "BUY" if bool(row["buy_signal"]) else "HOLD",
+            "주문일": order_day,
+            "데이터 기준일": base_day,
+            "LEI": _fmt(row["LEI_used"], 1),
+            "PMI": _fmt(row["PMI_used"], 1),
+            "Change_rate": _fmt(row["FEDFUNDS_6M_chg_used"], 2),
+        }
+        return result
 
    # Clear - 월별데이터(ECRI)
     def get_USSLIND(self):
@@ -2948,12 +3273,12 @@ class MacroCrawler:
 if __name__ == "__main__":
     crawler = MacroCrawler()
 
-
     # md_data = crawler.update_margin_debt_data()
     # pmi_data = crawler.update_ism_pmi_data()
     # fp_data = crawler.update_snp_forwardpe_data()
     # pc_data = crawler.update_putcall_ratio()
     # bb_data = crawler.update_bull_bear_spread()
+    # lei_data = crawler.update_lei_data()
 
-    data = crawler.get_us_leading_index_actual()
+    data = crawler.plot_sp500_with_lei_signals()
     print(data)
