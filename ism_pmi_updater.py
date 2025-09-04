@@ -16,6 +16,9 @@ class ISMPMIUpdater:
         self.csv_path = csv_path
         try:
             self.df = pd.read_csv(self.csv_path, parse_dates=["Month/Year"], encoding='CP949')
+            # 모두 월초 자정으로 정규화
+            self.df["Month/Year"] = pd.to_datetime(self.df["Month/Year"], errors="coerce")
+            self.df["Month/Year"] = self.df["Month/Year"].dt.to_period("M").dt.to_timestamp()
             # self.df.columns = self.df.columns.str.strip()
             # self.df.columns = self.df.columns.str.replace('\ufeff', '', regex=False)
             print("✅ ISM PMI CSV 불러오기 성공")
@@ -70,8 +73,11 @@ class ISMPMIUpdater:
         raw_df = self.df
 
         df = raw_df.copy()
-        # df["Month/Year"] = raw_df["발표일"].apply(self.extract_date)
-        # df["PMI"] = pd.to_numeric(raw_df["실제"], errors="coerce")
+
+        # 정규화(혹시 모를 문자열 섞임 방지)
+        df["Month/Year"] = pd.to_datetime(df["Month/Year"], errors="coerce")
+        df["Month/Year"] = df["Month/Year"].dt.to_period("M").dt.to_timestamp()
+
         df = df.dropna(subset=["Month/Year", "PMI"])
         df = df[["Month/Year", "PMI"]].drop_duplicates()
         df = df.sort_values("Month/Year")
@@ -126,14 +132,25 @@ class ISMPMIUpdater:
         raise Exception("❌ 'ISM 제조업 PMI' 항목을 찾을 수 없습니다.")
 
     def parse_tradingeconomics_date(self, date_str):
-        """
-        'Jul 2025' → pd.Timestamp('2025-07-01')
-        """
-        try:
-            return pd.to_datetime(date_str + "-01", format="%b %Y-%d")
-        except Exception as e:
-            print(f"❌ 발표일 파싱 실패: {date_str} / {e}")
+        # """
+        # 'Jul 2025' → pd.Timestamp('2025-07-01')
+        # """
+        # try:
+        #     return pd.to_datetime(date_str + "-01", format="%b %Y-%d")
+        # except Exception as e:
+        #     print(f"❌ 발표일 파싱 실패: {date_str} / {e}")
+        #     return None
+
+        # 'Aug 2025' -> 2025-08-01 (월초로 고정)
+        ts = pd.to_datetime(date_str, format="%b %Y", errors="coerce")
+        if pd.isna(ts):
+            print(f"❌ 발표일 파싱 실패: {date_str}")
             return None
+        return pd.Timestamp(year=ts.year, month=ts.month, day=1)
+    
+    def _normalize_month(ts: pd.Timestamp) -> pd.Timestamp:
+        # 월초 자정으로 강제 정규화
+        return pd.Timestamp(year=ts.year, month=ts.month, day=1)
         
     def update_csv(self):
         latest = self.get_ism_pmi()  # {'지표명': ..., '값': '49.00', '발표일': 'Jul 2025'}
@@ -149,9 +166,16 @@ class ISMPMIUpdater:
             return self.df
 
         # 2. 중복 체크
-        processed_df = self.df
+        # processed_df = self.df
         
-        if (processed_df["Month/Year"] == month_year).any():
+        # if (processed_df["Month/Year"] == month_year).any():
+        #     print(f"📭 이미 존재하는 PMI 데이터입니다: {month_year.date()}")
+        #     return processed_df
+        
+        # 월 단위로 중복 체크
+        processed_df = self.preprocess_raw_csv()
+        target_period = month_year.to_period("M")
+        if (processed_df["Month/Year"].dt.to_period("M") == target_period).any():
             print(f"📭 이미 존재하는 PMI 데이터입니다: {month_year.date()}")
             return processed_df
 
@@ -163,21 +187,35 @@ class ISMPMIUpdater:
             return processed_df
 
         # 4. 원본 df에 새 행 추가
+        # new_row = pd.DataFrame([{
+        #     "Month/Year": month_year.strftime("%Y-%m-%d"),
+        #     "PMI" : pmi_value
+        # }])
         new_row = pd.DataFrame([{
-            "Month/Year": month_year.strftime("%Y-%m-%d"),
-            "PMI" : pmi_value
+        "Month/Year": pd.Timestamp(year=month_year.year, month=month_year.month, day=1),
+        "PMI": pmi_value
         }])
-        self.df = pd.concat([self.df, new_row], ignore_index=True)
+
+        out = pd.concat([processed_df, new_row], ignore_index=True).sort_values("Month/Year")
+        
+        
+        # 저장: 날짜 포맷 통일 (시각 제거)
+        out.to_csv(self.csv_path, index=False, encoding="CP949", date_format="%Y-%m-%d")
+        self.df = out
+        print(f"✅ 새로운 PMI 데이터 저장 완료: {month_year.date()} / {pmi_value}")
+        return self.df
+
+        # self.df = pd.concat([self.df, new_row], ignore_index=True)
 
 
-        # 5. 저장
-        try:
-            self.df.to_csv(self.csv_path, index=False, encoding="CP949")
-            print(f"✅ 새로운 PMI 데이터 저장 완료: {month_year.date()} / {pmi_value}")
-        except Exception as e:
-            print("❌ CSV 저장 중 오류 발생:", e)
+        # # 5. 저장
+        # try:
+        #     self.df.to_csv(self.csv_path, index=False, encoding="CP949")
+        #     print(f"✅ 새로운 PMI 데이터 저장 완료: {month_year.date()} / {pmi_value}")
+        # except Exception as e:
+        #     print("❌ CSV 저장 중 오류 발생:", e)
 
-        return self.df 
+        # return self.df 
 
         
 
