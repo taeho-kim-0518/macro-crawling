@@ -196,3 +196,22 @@ with c3:
     st.write(lei_pmi_signal["Change_rate"])
 
 st.write(f"임계치 : pmi > 50 + lei > 100 + change_rate : {buy_delta_pp}")
+
+
+#--------------
+ape = crawler.analyze_pe()  # 임계치 바꾸려면 analyze_pe(fwd_buy_lt=16.5, ...) 처럼
+
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.metric("📅 기준일", ape["date"])
+with c2:
+    st.metric("TTM P/E", f'{ape["ttm_pe"]:.2f}')
+with c3:
+    st.metric("Forward P/E", f'{ape["forward_pe"]:.2f}')
+
+st.markdown("---")
+st.subheader("🚦 자동 시그널")
+st.markdown(f"**{ape['signal']}**")
+
+#with st.expander("규칙과 해석 보기"):
+st.markdown(ape["signal_md"])

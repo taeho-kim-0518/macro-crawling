@@ -24,7 +24,8 @@ class PutCallRatioUpdater:
             print("⚠️ CSV 파일이 없어 새로 생성합니다.")
             self.df = pd.DataFrame(columns=[
                 "date",
-                "forward_pe"
+                "equity_value",
+                "index_value"
             ])
 
     def get_equity_put_call_ratio(self):

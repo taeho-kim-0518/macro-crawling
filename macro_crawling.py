@@ -20,6 +20,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
+from zoneinfo import ZoneInfo
 
 
 from webdriver_manager.chrome import ChromeDriverManager
@@ -2155,47 +2156,174 @@ class MacroCrawler:
 
         return None
 
+    def analyze_pe(self,
+                fwd_buy_lt: float = 12.0,
+                fwd_sell_gt: float = 22.0,
+                ttm_sell_gt: float = 25.0):
+        """
+        Returns dict for Streamlit:
+        - date, ttm_pe, forward_pe (소숫점 2자리 반올림)
+        - absolute(Forward 기준), absolute_forward, absolute_ttm
+        - forward_vs_ttm
+        - signal: 'BUY' | 'SELL' | 'HOLD' | 'N/A'
+        - signal_reason: 트리거 사유 요약
+        - signal_md: st.markdown()/st.write()로 바로 쓸 수 있는 설명 블럭
+        - message: 전체 요약 텍스트
+        """
 
-    def analyze_pe(self):
+        # --- 데이터 취득 ---
+        ttm_pe_raw = self.get_ttm_pe().get("ttm_pe", "")
+        try:
+            ttm_pe = float(str(ttm_pe_raw).replace(",", "").strip())
+        except Exception:
+            ttm_pe = np.nan
 
-        ttm_pe_result = self.get_ttm_pe()
-        ttm_pe = ttm_pe_result["ttm_pe"]  # 문자열
+        fwd_df = pd.read_csv("forward_pe_data.csv")
+        fwd_df["forward_pe"] = pd.to_numeric(fwd_df["forward_pe"], errors="coerce")
+        forward_pe = fwd_df["forward_pe"].dropna().iloc[-1] if not fwd_df["forward_pe"].dropna().empty else np.nan
 
-        forward_pe_result = self.update_snp_forwardpe_data()
-        forward_pe = forward_pe_result["forward_pe"].iloc[-1]
-
-        # ✅ 문자열일 수 있는 ttm_pe를 float로 변환
-        ttm_pe = float(ttm_pe) #.replace(",", "").strip()
-        forward_pe = float(forward_pe)
-
-        message = f"📊 S&P 500 Forward PER: {forward_pe:.2f}\n"
-        message += f"📊 S&P 500 TTM PER: {ttm_pe:.2f}\n\n"
-
-        # 절대적 고평가/저평가 판단
-        if forward_pe > 21:
-            message += "⚠️ Forward PER 기준으로 **고평가** 구간입니다.\n"
-        elif forward_pe < 17:
-            message += "✅ Forward PER 기준으로 **저평가** 구간입니다.\n"
+        # --- 절대평가 ---
+        if pd.notna(forward_pe):
+            if forward_pe > fwd_sell_gt:
+                absolute_forward = "고평가"
+            elif forward_pe < fwd_buy_lt:
+                absolute_forward = "저평가"
+            else:
+                absolute_forward = "평균"
         else:
-            message += "⚖️ Forward PER 기준으로 **평균 범위**입니다.\n"
+            absolute_forward = "N/A"
 
-        # TTM 기준 고평가/저평가 판단
-        if ttm_pe > 20:
-            message += "⚠️ TTM PER 기준으로 **역사적 고평가** 구간입니다.\n"
-        elif ttm_pe < 13:
-            message += "✅ TTM PER 기준으로 **저평가** 구간입니다.\n"
+        if pd.notna(ttm_pe):
+            if ttm_pe > ttm_sell_gt:
+                absolute_ttm = "고평가"
+            elif ttm_pe < 13:
+                absolute_ttm = "저평가"
+            else:
+                absolute_ttm = "평균"
         else:
-            message += "⚖️ TTM PER 기준으로 **평균 수준**입니다.\n"
+            absolute_ttm = "N/A"
 
-        # TTM 대비 Forward 비교
-        if ttm_pe > forward_pe:
-            message += "🟢 시장은 **향후 실적 개선**을 기대하는 낙관적인 흐름입니다."
-        elif ttm_pe < forward_pe:
-            message += "🔴 시장은 **실적 둔화**를 반영하는 보수적인 흐름입니다."
+        if pd.notna(ttm_pe) and pd.notna(forward_pe):
+            if ttm_pe > forward_pe:
+                forward_vs_ttm = "향후 실적 개선 기대(낙관적)"
+            elif ttm_pe < forward_pe:
+                forward_vs_ttm = "실적 둔화 반영(보수적)"
+            else:
+                forward_vs_ttm = "현재 수준 유지 예상"
         else:
-            message += "⚪ 시장은 현재 실적 수준을 그대로 유지할 것으로 보고 있습니다."
+            forward_vs_ttm = "N/A"
 
-        return message
+        # --- 시그널 로직 ---
+        # 기본 규칙:
+        # - BUY: Forward P/E < fwd_buy_lt
+        # - SELL: Forward P/E > fwd_sell_gt OR TTM P/E > ttm_sell_gt
+        # - 그 외: HOLD
+        triggers = []
+        if pd.notna(forward_pe) and forward_pe < fwd_buy_lt:
+            signal = "BUY"
+            triggers.append(f"Forward P/E < {fwd_buy_lt:.2f}")
+        elif (pd.notna(forward_pe) and forward_pe > fwd_sell_gt) or (pd.notna(ttm_pe) and ttm_pe > ttm_sell_gt):
+            signal = "SELL"
+            if pd.notna(forward_pe) and forward_pe > fwd_sell_gt:
+                triggers.append(f"Forward P/E > {fwd_sell_gt:.2f}")
+            if pd.notna(ttm_pe) and ttm_pe > ttm_sell_gt:
+                triggers.append(f"TTM P/E > {ttm_sell_gt:.2f}")
+        elif pd.notna(forward_pe) or pd.notna(ttm_pe):
+            signal = "HOLD"
+            triggers.append("임계치 범위 내")
+        else:
+            signal = "N/A"
+            triggers.append("유효한 P/E 데이터 없음")
+
+        signal_reason = " & ".join(triggers)
+
+        # --- 날짜/출력 포맷 ---
+        today_kst = datetime.now(ZoneInfo("Asia/Seoul")).date().isoformat()
+
+        # 두 자리 반올림 값
+        ttm_pe_2 = float(f"{ttm_pe:.2f}") if pd.notna(ttm_pe) else np.nan
+        forward_pe_2 = float(f"{forward_pe:.2f}") if pd.notna(forward_pe) else np.nan
+
+        # 요약 메시지
+        message = (
+            f"📅 기준일: {today_kst}\n\n"
+            f"📊 S&P 500 Forward PER: {forward_pe_2:.2f}\n"
+            f"📊 S&P 500 TTM PER: {ttm_pe_2:.2f}\n\n"
+            f"🧭 절대평가(Forward 기준): {absolute_forward}\n"
+            f"🧭 절대평가(TTM 기준): {absolute_ttm}\n"
+            f"🔎 Forward vs TTM: {forward_vs_ttm}\n\n"
+            f"🚦 Signal: {signal}  ({signal_reason})"
+        )
+
+        # Streamlit 표기용 설명 블럭 (Markdown)
+        signal_md = (
+            "### 🚦 PER 기반 자동 시그널\n"
+            f"- **규칙**  \n"
+            f"  - 매수(BUY): Forward P/E **< {fwd_buy_lt:.2f}**  \n"
+            f"  - 매도(SELL): Forward P/E **> {fwd_sell_gt:.2f}** 또는 TTM P/E **> {ttm_sell_gt:.2f}**  \n"
+            f"  - 그 외: **HOLD**  \n\n"
+            f"- **현재 수치**  \n"
+            f"  - Forward P/E: **{forward_pe_2:.2f}**  \n"
+            f"  - TTM P/E: **{ttm_pe_2:.2f}**  \n\n"
+            f"- **판단 결과**  \n"
+            f"  - **Signal: {signal}**  \n"
+            f"  - 트리거: {signal_reason}  \n"
+        )
+
+        return {
+            "date": today_kst,
+            "ttm_pe": ttm_pe_2,
+            "forward_pe": forward_pe_2,
+            "absolute": absolute_forward,
+            "absolute_forward": absolute_forward,
+            "absolute_ttm": absolute_ttm,
+            "forward_vs_ttm": forward_vs_ttm,
+            "signal": signal,
+            "signal_reason": signal_reason,
+            "signal_md": signal_md,
+            "message": message,
+        }
+
+    # def analyze_pe(self):
+
+    #     ttm_pe_result = self.get_ttm_pe()
+    #     ttm_pe = ttm_pe_result["ttm_pe"]  # 문자열
+
+    #     forward_pe_result = pd.read_csv("forward_pe_data.csv")
+    #     forward_pe = forward_pe_result["forward_pe"].iloc[-1]
+
+    #     # ✅ 문자열일 수 있는 ttm_pe를 float로 변환
+    #     ttm_pe = float(ttm_pe) #.replace(",", "").strip()
+    #     forward_pe = float(forward_pe)
+
+    #     message = f"📊 S&P 500 Forward PER: {forward_pe:.2f}\n"
+    #     message += f"📊 S&P 500 TTM PER: {ttm_pe:.2f}\n\n"
+
+    #     # 절대적 고평가/저평가 판단
+    #     if forward_pe > 21:
+    #         message += "⚠️ Forward PER 기준으로 **고평가** 구간입니다.\n"
+    #     elif forward_pe < 17:
+    #         message += "✅ Forward PER 기준으로 **저평가** 구간입니다.\n"
+    #     else:
+    #         message += "⚖️ Forward PER 기준으로 **평균 범위**입니다.\n"
+
+    #     # TTM 기준 고평가/저평가 판단
+    #     if ttm_pe > 20:
+    #         message += "⚠️ TTM PER 기준으로 **역사적 고평가** 구간입니다.\n"
+    #     elif ttm_pe < 13:
+    #         message += "✅ TTM PER 기준으로 **저평가** 구간입니다.\n"
+    #     else:
+    #         message += "⚖️ TTM PER 기준으로 **평균 수준**입니다.\n"
+
+    #     # TTM 대비 Forward 비교
+    #     if ttm_pe > forward_pe:
+    #         message += "🟢 시장은 **향후 실적 개선**을 기대하는 낙관적인 흐름입니다."
+    #     elif ttm_pe < forward_pe:
+    #         message += "🔴 시장은 **실적 둔화**를 반영하는 보수적인 흐름입니다."
+    #     else:
+    #         message += "⚪ 시장은 현재 실적 수준을 그대로 유지할 것으로 보고 있습니다."
+
+    #     return message
     
     def get_vix_index(self):
         '''
@@ -2326,6 +2454,8 @@ class MacroCrawler:
         '''
         로컬에 저장된 PUT CALL RATIO 파일 불러오기
         '''
+        putcall_df = None  # ✅ 안전한 초깃값
+
         try:
             putcall_df = self.put_call_ratio_updater.update_csv()
             print("✅ PutCall Ratio CSV 업데이트 완료")
@@ -3273,12 +3403,12 @@ class MacroCrawler:
 if __name__ == "__main__":
     crawler = MacroCrawler()
 
-    md_data = crawler.update_margin_debt_data()
-    pmi_data = crawler.update_ism_pmi_data()
-    fp_data = crawler.update_snp_forwardpe_data()
-    pc_data = crawler.update_putcall_ratio()
-    bb_data = crawler.update_bull_bear_spread()
-    lei_data = crawler.update_lei_data()
+    # md_data = crawler.update_margin_debt_data()
+    # pmi_data = crawler.update_ism_pmi_data()
+    # fp_data = crawler.update_snp_forwardpe_data()
+    # pc_data = crawler.update_putcall_ratio()
+    # bb_data = crawler.update_bull_bear_spread()
+    # lei_data = crawler.update_lei_data()
 
-    data = crawler.plot_sp500_with_lei_signals()
+    data = crawler.analyze_pe()
     print(data)

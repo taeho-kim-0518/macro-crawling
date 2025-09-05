@@ -8,6 +8,7 @@ import sys
 import os
 from pathlib import Path
 import platform
+from matplotlib.ticker import StrMethodFormatter
 
 # =========================
 # 폰트 설정 (로컬/배포 겸용)
@@ -156,12 +157,16 @@ def draw_abs_chart(
     fig, ax = plt.subplots(figsize=(4, 3))
     ax.plot(df_local[date_col], df_local[value_col], color=color)
 
+    # ✅ y축 눈금 소숫점 고정 (예: 4자리)
+    ax.yaxis.set_major_formatter(StrMethodFormatter("{x:.2f}"))
+
+
     # 마지막 값 라벨(검정)
     last_date = df_local[date_col].iloc[-1]
     last_value = df_local[value_col].iloc[-1]
     ax.text(
         last_date, last_value,
-        f"{last_value:,.0f}",
+        f"{last_value:.2f}",
         fontsize=20,
         color='black',
         ha='left',
