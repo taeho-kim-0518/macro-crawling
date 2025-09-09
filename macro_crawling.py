@@ -1620,6 +1620,7 @@ class MacroCrawler:
         market_tz: str = "America/New_York",  # S&P500 거래월 판단용
         today_tz: str = "Asia/Seoul",         # "오늘 날짜" 표기용
     ):
+        
         """
         오늘 기준(로컬 today_tz)으로, 이번 달 주문일(미국장 월초 첫 거래일)에
         매수 신호가 있는지 요약해서 반환.
@@ -1699,9 +1700,15 @@ class MacroCrawler:
             .sort_values("date")
             .reset_index(drop=True)
         )
+
+        # --- 발표 시차(매월 25일 규칙) 반영: 오늘 날짜 기준 동적 lag 계산
+        now_us = pd.Timestamp.now(tz=market_tz)  # 미국장 기준 오늘
+        effective_lag = 2 if now_us.day < 25 else 1
+
+
         df["FEDFUNDS_6M_chg"] = df["FEDFUNDS"] - df["FEDFUNDS"].shift(6)
 
-        df["LEI_used"] = df["LEI"].shift(lag_months)
+        df["LEI_used"] = df["LEI"].shift(effective_lag)
         df["PMI_used"] = df["PMI"].shift(lag_months)
         df["FEDFUNDS_6M_chg_used"] = df["FEDFUNDS_6M_chg"].shift(lag_months)
 
@@ -3410,5 +3417,5 @@ if __name__ == "__main__":
     # bb_data = crawler.update_bull_bear_spread()
     # lei_data = crawler.update_lei_data()
 
-    data = crawler.analyze_pe()
+    data = crawler.decide_today_lei_signal_min()
     print(data)
