@@ -220,7 +220,7 @@ df_fed = crawler.get_fed_funds_rate()
 df_fed['date'] = df_fed['date'].dt.to_period('M').dt.to_timestamp()
 
 # ⬇️ 실질 금리(현재 코드는 10Y-2Y 스프레드로 계산)
-real_rate = pd.DataFrame({
+diff_rate = pd.DataFrame({
     "date": df_10y["date"],
     "value": df_10y["value"] - df_2y["value"]
 })
@@ -254,8 +254,8 @@ with col3:
 figsize2 = get_figsize_for_cols(2)
 col1, col2 = st.columns(2)
 with col1:
-    st.subheader("🟩 실질 금리")
-    fig = draw_yield_chart(real_rate, 'value', 'Real Yield', 'green', figsize=figsize2)
+    st.subheader("🟩 장단기 금리차")
+    fig = draw_yield_chart(diff_rate, 'value', 'Real Yield', 'green', figsize=figsize2)
     st.pyplot(fig, use_container_width=True)
     st.write("월별 데이터, 1개월 지연 데이터")
 

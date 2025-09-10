@@ -3410,12 +3410,12 @@ class MacroCrawler:
 if __name__ == "__main__":
     crawler = MacroCrawler()
 
-    # md_data = crawler.update_margin_debt_data()
-    # pmi_data = crawler.update_ism_pmi_data()
-    # fp_data = crawler.update_snp_forwardpe_data()
-    # pc_data = crawler.update_putcall_ratio()
-    # bb_data = crawler.update_bull_bear_spread()
-    # lei_data = crawler.update_lei_data()
+    md_data = crawler.update_margin_debt_data()
+    pmi_data = crawler.update_ism_pmi_data()
+    fp_data = crawler.update_snp_forwardpe_data()
+    pc_data = crawler.update_putcall_ratio()
+    bb_data = crawler.update_bull_bear_spread()
+    lei_data = crawler.update_lei_data()
 
     data = crawler.decide_today_lei_signal_min()
     print(data)
