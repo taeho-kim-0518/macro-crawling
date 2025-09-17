@@ -6,6 +6,7 @@ import os
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -30,12 +31,15 @@ class forwardpe_updater:
             url = 'https://en.macromicro.me/series/20052/sp500-forward-pe-ratio'
 
             options = Options()
-            # options.add_argument("--headless")
+            # GitHub Actions 환경에서는 headless 모드를 반드시 활성화해야 합니다.
+            options.add_argument("--headless")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-gpu")
  
 
-            driver = webdriver.Chrome(options=options)
+            # 수정: webdriver-manager를 사용해 자동으로 드라이버 관리
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=options)
             driver.get(url)
 
 
