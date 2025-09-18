@@ -9,6 +9,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import time
 
@@ -24,7 +25,7 @@ class BullBearSpreadUpdater:
             print("⚠️ CSV 파일이 없어 새로 생성합니다.")
             self.df = pd.DataFrame(columns=[
                 "date",
-                "forward_pe"
+                "spread"
             ])
 
     def get_bull_bear_spread(self):
@@ -32,14 +33,19 @@ class BullBearSpreadUpdater:
         url = "https://ycharts.com/indicators/us_investor_sentiment_bull_bear_spread"
 
         options = Options()
-        options.add_argument("--headless")
+        # options.add_argument("--headless")
         options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")
+ 
 
-        driver = webdriver.Chrome(options=options)
+        # 수정: webdriver-manager를 사용해 자동으로 드라이버 관리
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
         driver.get(url)
-        time.sleep(5)  # JS 로딩 대기
-
+        # ✅ time.sleep(5) 대신 WebDriverWait를 사용하여 요소가 나타날 때까지 대기
+        WebDriverWait(driver, 30).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.stats-card-section > span.text-2xl"))
+            )
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         driver.quit()
 

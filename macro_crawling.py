@@ -3205,6 +3205,7 @@ class MacroCrawler:
         '''
         로컬에 저장된 bull_bear_spread 파일 불러오기
         '''
+        bb_spread = None  # ✅ 변수 초기화
         try:
             bb_spread = self.bull_bear_spread_updater.update_csv()
             print("✅ Bull Bear Spread CSV 업데이트 완료")
@@ -3218,7 +3219,7 @@ class MacroCrawler:
         url = "https://ycharts.com/indicators/us_investor_sentiment_bull_bear_spread"
 
         options = Options()
-        options.add_argument("--headless")
+        # options.add_argument("--headless")
         options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")
 
@@ -3410,12 +3411,12 @@ class MacroCrawler:
 if __name__ == "__main__":
     crawler = MacroCrawler()
 
-    # md_data = crawler.update_margin_debt_data()
-    # pmi_data = crawler.update_ism_pmi_data()
-    # fp_data = crawler.update_snp_forwardpe_data()
-    # pc_data = crawler.update_putcall_ratio()
-    # bb_data = crawler.update_bull_bear_spread()
-    # lei_data = crawler.update_lei_data()
+    md_data = crawler.update_margin_debt_data()
+    pmi_data = crawler.update_ism_pmi_data()
+    fp_data = crawler.update_snp_forwardpe_data()
+    pc_data = crawler.update_putcall_ratio()
+    bb_data = crawler.update_bull_bear_spread()
+    lei_data = crawler.update_lei_data()
 
     data = crawler.decide_today_lei_signal_min()
     print(data)

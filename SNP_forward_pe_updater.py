@@ -35,6 +35,11 @@ class forwardpe_updater:
             options.add_argument("--headless")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-gpu")
+            options.add_argument("--disable-dev-shm-usage") # 💡 추가
+            options.add_argument(
+            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            )
+            options.add_argument("--disable-software-rasterizer") # 💡 추가
  
 
             # 수정: webdriver-manager를 사용해 자동으로 드라이버 관리
@@ -45,12 +50,12 @@ class forwardpe_updater:
 
             try:
                 # ✅ 해당 요소가 로드될 때까지 대기 (최대 10초)
-                WebDriverWait(driver, 20).until(
+                WebDriverWait(driver, 30).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "div.sidebar-sec.chart-stat-lastrows span.val"))
                 )
-            except:
+            except Exception as e:
                 driver.quit()
-                raise RuntimeError("📛 페이지 로딩 중 Forward PE 데이터를 찾지 못했습니다.")
+                raise RuntimeError(f"📛 페이지 로딩 중 Forward PE 데이터를 찾지 못했습니다. 에러: {e}")
 
             soup = BeautifulSoup(driver.page_source, 'html.parser')
             driver.quit()
@@ -70,10 +75,16 @@ class forwardpe_updater:
                 raise ValueError("📛 Forward PE 값을 찾을 수 없습니다.")
 
     def update_forward_pe_csv(self):
-        new_df = self.get_forward_pe()
+
+        try:
+            new_df = self.get_forward_pe()
+        except (RuntimeError, ValueError) as e:
+            print(f"❌ 데이터 업데이트 실패: {e}")
+            return
         
         if new_df is None:
-            return 
+            print("📭 새로운 데이터 없음. CSV 업데이트 건너뜀.")
+            return
         
         # ✅ dict → DataFrame 변환
         new_df = pd.DataFrame([new_df])
