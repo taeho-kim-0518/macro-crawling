@@ -11,6 +11,9 @@ financials = ticker_data.financials.iloc[:, :5]
 balance_sheet = ticker_data.balance_sheet.iloc[:, :5]
 cash_flow = ticker_data.cash_flow.iloc[:, :5]
 historical_prices = yf.download(ticker_symbol, period="5y")
+current_price = ticker_data.info.get('currentPrice')
+forward_per = ticker_data.info.get('forwardPE')
+peg_ratio = ticker_data.info.get('pegRatio')
 
 analysis_df = pd.DataFrame()
 
@@ -66,10 +69,12 @@ if st.button('분석하기'):
 
                 # 재무상태표 데이터
                 analysis_df['총자산'] = balance_sheet.loc['Total Assets'].fillna(0).astype(int)
+                analysis_df['유형자산'] = balance_sheet.loc['Current Assets'].fillna(0).astype(int)
                 equity_keys = ["Stockholders' Equity", "Total Stockholder Equity", "Common Stock Equity", "Total Equity"]
                 analysis_df['총자본'] = get_clean_financial_data(balance_sheet, equity_keys).fillna(0).astype(int)
                 analysis_df['총부채'] = analysis_df['총자산'] - analysis_df['총자본']
                 analysis_df['순유형자산'] = balance_sheet.loc['Net Tangible Assets'].fillna(0).astype(int)
+                analysis_df['순유동자산'] = analysis_df['유동자산'] - analysis_df['총부채']
 
 
                 # 현금흐름 데이터
@@ -79,7 +84,11 @@ if st.button('분석하기'):
                 analysis_df['자본적 지출'] = cash_flow.loc['Capital Expenditure'].fillna(0).astype(int)
                 analysis_df['자사주매입'] = cash_flow.loc['Repurchase of Capital Stock'].fillna(0).astype(int)
                 analysis_df['잉여현금흐름'] = cash_flow.loc['Free Cash Flow'].fillna(0).astype(int)
-                
+
+                analysis_df['ROA'] = analysis_df['당기순이익']/analysis_df['총자산']
+                analysis_df['ROE'] = analysis_df['당기순이익']/analysis_df['총자본']
+                analysis_df['순유형자산수익률'] = analysis_df['당기순이익']/analysis_df['순유형자산']
+                analysis_df['부채비율'] = analysis_df['총부채']/analysis_df['총자본']
 
                 # CAPEX 분석
                 #CAPEX와 영업활동 현금흐름 (OCF) 비교:
@@ -95,32 +104,51 @@ if st.button('분석하기'):
                 # 순유형자산 이익률 및 ROE 계산
             
                 
-                # PER 계산
-                eps = get_clean_financial_data(financials, ['Basic EPS'])
-                per_series = []
-                for date in financials.columns:
-                    close_price = historical_prices['Close'].asof(date)
-                    
-                    if not isinstance(eps.loc[date], (int, float)) or eps.loc[date] == 0:
-                        per_series.append(None)
-                    else:
-                        per_series.append(float(close_price) / float(eps.loc[date]))
-
-                analysis_df['PER'] = per_series
-                
                 # 3. 결과 출력하기
                 st.subheader(f'"{ticker_symbol}" 지난 5년 재무 지표 분석')
                 st.dataframe(analysis_df.T.style.format(formatter={
-                    '총 매출': '{:,.0f}',
-                    '영업 이익': '{:,.0f}',
-                    '순이익': '{:,.0f}',
+                    '매출액': '{:,.0f}',
+                    '매출총이익': '{:,.0f}',
+                    '영업이익': '{:,.0f}',
+                    '당기순이익': '{:,.0f}',
+                    '총자산': '{:,.0f}',
+                    '총자본': '{:,.0f}',
+                    '총부채': '{:,.0f}',
                     '순유형자산': '{:,.0f}',
-                    '순유형자산 이익률 (%)': '{:.2f}',
-                    'ROE (%)': '{:.2f}',
+                    '순유동자산': '{:,.0f}',
+                    '영업현금흐름': '{:,.0f}',
+                    '투자현금흐름': '{:,.0f}',
+                    '재무현금흐름': '{:,.0f}',
+                    '자본적 지출': '{:,.0f}',
+                    '자사주매입': '{:,.0f}',
+                    '잉여현금흐름': '{:,.0f}',
+                    '주당순이익': '{:.2f}',
+                    'ROA': '{:.2%}',
+                    'ROE': '{:.2%}',
+                    '순유형자산수익률': '{:.2f}',
+                    '부채비율': '{:.2f}',
                     'PER': '{:.2f}'
                 }))
                 
-                forward_per = info.get('forwardPE')
+                # PER 계산하기
+                if current_price is not None:
+                    latest_eps = analysis_df['주당순이익'][0]
+
+                    if latest_eps != 0:
+                        per = current_price/latest_eps
+                    else:
+                        st.warning("최신 주당순이익(EPS)가 0이므로, 계산할 수 없습니다.")
+
+                else:
+                    st.warning("현재 주가를 가져올 수 없습니다.")
+
+                # Forward PE 가져오기
+                if forward_per is not None:
+                    st.write(f'---')
+                    st.write(f'**현재 Forward PER:** {forward_per:.2f}')
+                    st.write('*(Forward PER은 미래 예측값으로, 지난 5년간의 표에 포함되지 않습니다.)*')
+
+                # PEG 가져오기
                 if forward_per is not None:
                     st.write(f'---')
                     st.write(f'**현재 Forward PER:** {forward_per:.2f}')
