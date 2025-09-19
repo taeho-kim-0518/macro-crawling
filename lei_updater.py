@@ -16,7 +16,7 @@ class LEIUpdater:
     def __init__(self, csv_path="lei_data.csv"):
         self.csv_path = csv_path
         try:
-            self.df = pd.read_csv(self.csv_path, parse_dates=["date"], encoding='CP949')
+            self.df = pd.read_csv(self.csv_path, encoding='CP949')
             # self.df.columns = self.df.columns.str.strip()
             # self.df.columns = self.df.columns.str.replace('\ufeff', '', regex=False)
             print("✅ LEI CSV 불러오기 성공")
@@ -202,38 +202,60 @@ class LEIUpdater:
             return self.df
 
         # 1. 날짜 파싱
-        month_year = self.parse_tradingeconomics_date(latest["date"])
-        print("데이터 기준 연월 : ", month_year)
-        if month_year is None:
+        #month_year = self.parse_tradingeconomics_date(latest["date"])
+        month_year_dt = pd.to_datetime(latest["date"], format="%b %Y")
+        print("데이터 기준 연월 : ", month_year_dt)
+        month_year_str = month_year_dt.strftime("%Y-%m-%d")
+
+        if month_year_str is None:
             print("❌ 날짜 변환 실패")
             return self.df
+        
+        print(f"데이터 기준 연월 : {month_year_str}")
 
         # 2. 중복 체크
-        processed_df = self.df
         
-        if (processed_df["date"] == month_year).any():
-            print(f"📭 이미 존재하는 LEI 데이터입니다: {month_year.date()}")
-            return processed_df
+        # 💡 수정: to_datetime을 사용하여 df의 'date' 열과 동일한 타입으로 비교
+        if (self.df["date"].astype(str) == month_year_str).any():
+            print(f"📭 이미 존재하는 LEI 데이터입니다: {month_year_str}")
+            return self.df
+        # if (processed_df["date"] == month_year).any():
+        #     print(f"📭 이미 존재하는 LEI 데이터입니다: {month_year.date()}")
+        #     return processed_df
+        
 
         # 3. 값 변환
         try:
             lei_value = float(latest["value"])
-        except:
-            print("❌ LEI 값 변환 실패:", latest["value"])
-            return processed_df
+        except ValueError:
+            print("❌ LEI 값 변환 실패:", latest.get("value"))
+            return self.df
 
         # 4. 원본 df에 새 행 추가
         new_row = pd.DataFrame([{
-            "date": month_year.strftime("%Y-%m-%d"),
-            "value" : lei_value
+            "date": month_year_str,
+            "value": lei_value
         }])
         self.df = pd.concat([self.df, new_row], ignore_index=True)
+
+        # try:
+        #     lei_value = float(latest["value"])
+        # except:
+        #     print("❌ LEI 값 변환 실패:", latest["value"])
+        #     return processed_df
+
+        # # 4. 원본 df에 새 행 추가
+        # new_row = pd.DataFrame([{
+        #     "date": month_year.strftime("%Y-%m-%d"),
+        #     "value" : lei_value
+        # }])
+        # self.df = pd.concat([self.df, new_row], ignore_index=True)
 
 
         # 5. 저장
         try:
             self.df.to_csv(self.csv_path, index=False, encoding="CP949")
-            print(f"✅ 새로운 PMI 데이터 저장 완료: {month_year.date()} / {lei_value}")
+            print(f"✅ 새로운 PMI 데이터 저장 완료: {month_year_str.date()} / {lei_value}")
         except Exception as e:
             print("❌ CSV 저장 중 오류 발생:", e)
 
