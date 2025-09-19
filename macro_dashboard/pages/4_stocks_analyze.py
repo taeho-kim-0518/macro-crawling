@@ -4,8 +4,6 @@ import pandas as pd
 import numpy as np
 
 
-
-
 # 데이터를 안전하게 가져와 숫자로 변환하는 함수 (여러 키를 지원하도록 개선)
 def get_clean_financial_data(df, keys):
     '''

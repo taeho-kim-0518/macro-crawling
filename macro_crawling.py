@@ -1653,7 +1653,7 @@ class MacroCrawler:
         lei = pd.read_csv(lei_csv_path)
         if "date" not in lei.columns:
             raise ValueError("lei_data.csv에는 'date' 컬럼이 필요합니다.")
-        lei["date"] = pd.to_datetime(lei["date"])
+        lei["date"] = pd.to_datetime(lei["date"], format='mixed')
         if "LEI" not in lei.columns:
             if "value" in lei.columns:
                 lei = lei.rename(columns={"value": "LEI"})

@@ -32,14 +32,9 @@ class forwardpe_updater:
 
             options = Options()
             # GitHub Actions 환경에서는 headless 모드를 반드시 활성화해야 합니다.
-            options.add_argument("--headless")
+            # options.add_argument("--headless")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-gpu")
-            options.add_argument("--disable-dev-shm-usage") # 💡 추가
-            options.add_argument(
-            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-            )
-            options.add_argument("--disable-software-rasterizer") # 💡 추가
  
 
             # 수정: webdriver-manager를 사용해 자동으로 드라이버 관리
