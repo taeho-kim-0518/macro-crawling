@@ -29,130 +29,94 @@ class PutCallRatioUpdater:
                 "index_value"
             ])
 
-    def get_equity_put_call_ratio(self):
-        url = 'https://ycharts.com/indicators/cboe_equity_put_call_ratio'
-
+    def get_put_call_ratio(self, url):
+        """주어진 URL에서 Put-Call Ratio 값을 추출합니다."""
         options = Options()
         options.add_argument("--headless")
         options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")
-
-        # 수정: webdriver-manager를 사용해 자동으로 드라이버 관리
+        
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
         driver.get(url)
-        time.sleep(5)  # JS 로딩 대기
-
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-        driver.quit()
-
-        # "Last Value" 텍스트가 있는 td 찾기
-        for td in soup.select("td.col-6"):
-            if "Last Value" in td.get_text(strip=True):
-                value_td = td.find_next_sibling("td")
-                if value_td:
-                    equity_value = value_td.get_text(strip=True)
-                    break
-
-        # ✅ Last Period (날짜) 추출 - tr 기반으로 따로 탐색
-        for row in soup.find_all("tr"):
-            tds = row.find_all("td")
-            if len(tds) == 2 and "Latest Period" in tds[0].get_text(strip=True):
-                date = tds[1].get_text(strip=True)
-                break
-
-        if equity_value and date:
-            return {
-                "date": date,
-                "equity_value": equity_value
-            }
-        else:
-            raise ValueError("❌ Last Value 또는 Last Period를 찾을 수 없습니다.")
-
-
-    def get_index_put_call_ratio(self):
-        url = 'https://ycharts.com/indicators/cboe_index_put_call_ratio'
-
-        options = Options()
-        options.add_argument("--headless")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--no-sandbox")
-   
-
-        # 수정: webdriver-manager를 사용해 자동으로 드라이버 관리
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=options)
-        driver.get(url)
-        # ✅ time.sleep(5) 대신 WebDriverWait를 사용하여 요소가 나타날 때까지 대기
-        WebDriverWait(driver, 30).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.stats-card-section > span.text-2xl"))
+        
+        try:
+            WebDriverWait(driver, 30).until(
+                EC.presence_of_element_located((By.XPATH, "//h3[contains(text(), 'Stats')]"))
             )
-
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-        driver.quit()
-
-        # "Last Value" 텍스트가 있는 td 찾기
-        for td in soup.select("td.col-6"):
-            if "Last Value" in td.get_text(strip=True):
-                value_td = td.find_next_sibling("td")
-                if value_td:
-                    index_value = value_td.get_text(strip=True)
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+            
+            stats_panel = None
+            for panel in soup.find_all('div', class_='panel-data'):
+                title = panel.find('h3', class_='panel-title')
+                if title and title.get_text(strip=True) == 'Stats':
+                    stats_panel = panel
                     break
+            
+            if not stats_panel:
+                raise ValueError(f"❌ '{url}'에서 'Stats' 패널을 찾을 수 없습니다.")
 
-        # ✅ Last Period (날짜) 추출 - tr 기반으로 따로 탐색
-        for row in soup.find_all("tr"):
-            tds = row.find_all("td")
-            if len(tds) == 2 and "Latest Period" in tds[0].get_text(strip=True):
-                date = tds[1].get_text(strip=True)
-                break
+            last_value_td = stats_panel.find('td', string='Last Value')
+            latest_period_td = stats_panel.find('td', string='Latest Period')
 
-        if index_value and date:
-            return {
-                "date": date,
-                "index_value": index_value
-            }
-        else:
-            raise ValueError("❌ Last Value 또는 Last Period를 찾을 수 없습니다.")
+            if last_value_td and last_value_td.find_next_sibling('td'):
+                ratio_value = last_value_td.find_next_sibling('td').get_text(strip=True)
+            else:
+                ratio_value = None
+
+            if latest_period_td and latest_period_td.find_next_sibling('td'):
+                date_value = latest_period_td.find_next_sibling('td').get_text(strip=True)
+            else:
+                date_value = None
+
+            if ratio_value and date_value:
+                return {
+                    "date": date_value,
+                    "value": float(ratio_value)
+                }
+            else:
+                raise ValueError(f"❌ '{url}'에서 'Last Value' 또는 'Latest Period'를 찾을 수 없습니다.")
+                
+        finally:
+            driver.quit()
 
     def update_csv(self):
-        equity_df = self.get_equity_put_call_ratio()
-        index_df = self.get_index_put_call_ratio()
+        equity_url = 'https://ycharts.com/indicators/cboe_equity_put_call_ratio'
+        index_url = 'https://ycharts.com/indicators/cboe_index_put_call_ratio'
+
+        try:
+            equity_data = self.get_put_call_ratio(equity_url)
+            index_data = self.get_put_call_ratio(index_url)
+        except ValueError as e:
+            print(e)
+            return self.df
     
-        # 날짜 포맷 정제 (공통 적용)
-        date_str_eq = equity_df["date"]
-        date_str_idx = index_df["date"]
-
-        parsed_date_eq = pd.to_datetime(date_str_eq, format="%b %d %Y", errors="coerce")
-        parsed_date_idx = pd.to_datetime(date_str_idx, format="%b %d %Y", errors="coerce")
-
-        # 날짜가 다르면 예외 처리 (예외적으로 발생할 수 있음)
-        if parsed_date_eq != parsed_date_idx:
-            raise ValueError(f"❌ 날짜 불일치: equity={parsed_date_eq}, index={parsed_date_idx}")
-
+        if equity_data['date'] != index_data['date']:
+            raise ValueError(f"❌ 날짜 불일치: equity={equity_data['date']}, index={index_data['date']}")
         
-        parsed_date = parsed_date_eq
-
-        # 이미 존재하는 날짜인지 확인
-        if parsed_date in self.df["date"].values:
-            print("📭 이미 존재하는 날짜입니다. 업데이트 건너뜀.")
+        parsed_date = pd.to_datetime(equity_data['date'], format="%b %d %Y", errors="coerce")
+        if pd.isna(parsed_date):
+            print(f"❌ 날짜 포맷 오류: {equity_data['date']}")
             return self.df
 
-        # 새 행 추가
+        if self.df["date"].isin([parsed_date]).any():
+            print("📭 이미 존재하는 날짜입니다. 업데이트 건너뜀.")
+            return self.df
+        
         new_row = pd.DataFrame([{
             "date": parsed_date,
-            "equity_value": float(equity_df["equity_value"]),
-            "index_value": float(index_df["index_value"])
+            "equity_value": equity_data['value'],
+            "index_value": index_data['value']
         }])
 
         updated_df = pd.concat([self.df, new_row], ignore_index=True)
         updated_df = updated_df.sort_values("date")
-        updated_df.to_csv(self.csv_path, index=False)
+        updated_df.to_csv(self.csv_path, index=False, encoding='CP949')
         self.df = updated_df
         print("✅ 새로운 데이터가 추가되었습니다.")
         return self.df
-    
-if __name__ == "__main__":
-    update = PutCallRatioUpdater()
 
-    result = update.update_csv()
+if __name__ == "__main__":
+    updater = PutCallRatioUpdater()
+    result = updater.update_csv()
     print(result)
