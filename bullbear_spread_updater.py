@@ -33,7 +33,7 @@ class BullBearSpreadUpdater:
         url = "https://ycharts.com/indicators/us_investor_sentiment_bull_bear_spread"
 
         options = Options()
-        # options.add_argument("--headless")
+        options.add_argument("--headless")
         options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")
  
@@ -42,35 +42,45 @@ class BullBearSpreadUpdater:
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
         driver.get(url)
-        # ✅ time.sleep(5) 대신 WebDriverWait를 사용하여 요소가 나타날 때까지 대기
-        WebDriverWait(driver, 30).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.stats-card-section > span.text-2xl"))
-            )
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-        driver.quit()
 
-        # "Last Value" 텍스트가 있는 td 찾기
-        for td in soup.select("td.col-6"):
-            if "Last Value" in td.get_text(strip=True):
-                value_td = td.find_next_sibling("td")
-                if value_td:
-                    bull_bear_spread = value_td.get_text(strip=True)
+        try:
+            # ✅ time.sleep(5) 대신 WebDriverWait를 사용하여 요소가 나타날 때까지 대기
+            WebDriverWait(driver, 30).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.panel-data"))
+                )
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+
+            # 'Stats' 제목을 가진 패널을 찾기
+            stats_panel = None
+            for panel in soup.find_all('div', class_='panel-data'):
+                title = panel.find('h3', class_='panel-title')
+                if title and title.get_text(strip=True) == 'Stats':
+                    stats_panel = panel
                     break
+            
+            if not stats_panel:
+                raise ValueError("❌ 'Stats' 패널을 찾을 수 없습니다. 웹사이트 구조가 변경되었을 수 있습니다.")
 
-        # ✅ Last Period (날짜) 추출 - tr 기반으로 따로 탐색
-        for row in soup.find_all("tr"):
-            tds = row.find_all("td")
-            if len(tds) == 2 and "Latest Period" in tds[0].get_text(strip=True):
-                date = tds[1].get_text(strip=True)
-                break
+            # 선택된 'Stats' 패널 내에서 'Last Value'와 'Latest Period'를 찾음
+            last_value_td = stats_panel.find('td', string='Last Value')
+            latest_period_td = stats_panel.find('td', string='Latest Period')
 
-        if bull_bear_spread and date:
-            return {
-                "date": date,
-                "spread": bull_bear_spread
-            }
-        else:
-            raise ValueError("❌ Last Value 또는 Last Period를 찾을 수 없습니다.")
+            if last_value_td and last_value_td.find_next_sibling('td'):
+                bull_bear_spread = last_value_td.find_next_sibling('td').get_text(strip=True)
+            
+            if latest_period_td and latest_period_td.find_next_sibling('td'):
+                date = latest_period_td.find_next_sibling('td').get_text(strip=True)
+
+            if bull_bear_spread and date:
+                return {
+                    "date": date,
+                    "spread": bull_bear_spread
+                }
+            else:
+                raise ValueError("❌ 'Last Value' 또는 'Latest Period'를 찾을 수 없습니다.")
+                
+        finally:
+            driver.quit()
 
 
 
@@ -109,4 +119,3 @@ if __name__ == "__main__":
     update = BullBearSpreadUpdater()
 
     result = update.update_csv()
-    print(result)
