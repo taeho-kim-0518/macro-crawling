@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
+
 # 데이터를 안전하게 가져와 Series로 변환하는 함수
 def get_clean_financial_series(df, keys):
     '''
@@ -114,7 +115,7 @@ if st.button('분석하기'):
                     st.subheader('주요 투자 지표')
                     
                     forward_per = info.get('forwardPE')
-                    peg_ratio = info.get('pegRatio')
+                    peg_ratio = info.get('trailingPegRatio')
                     
                     st.metric("현재 주가", f"${current_price:,.2f}")
                     st.metric("Forward PER", f"{forward_per:.2f}" if forward_per is not None else "데이터 없음")
