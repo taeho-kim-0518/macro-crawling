@@ -77,7 +77,19 @@ if st.button('분석하기'):
                 analysis_df['투자현금흐름'] = cash_flow.loc['Investing Cash Flow'].fillna(0).astype(int)
                 analysis_df['재무현금흐름'] = cash_flow.loc['Financing Cash Flow'].fillna(0).astype(int)
                 analysis_df['자본적 지출'] = cash_flow.loc['Capital Expenditure'].fillna(0).astype(int)
-                analysis_df['자사주매입'] = cash_flow.loc['Repurchase of Capital Stock'].fillna(0).astype(int)
+
+                # 자사주 매입
+                try:
+                    analysis_df['자사주매입'] = cash_flow.loc['Repurchase of Capital Stock'].fillna(0).astype(int)
+                except:
+                    analysis_df['자사주매입'] = 0
+
+                # 유상증자
+                try:
+                    analysis_df['유상증자'] = cash_flow.loc['Issuance of Capital Stock'].fillna(0).astype(int)
+                except:
+                    analysis_df['유상증자'] = 0
+
                 analysis_df['잉여현금흐름'] = cash_flow.loc['Free Cash Flow'].fillna(0).astype(int)
 
                 analysis_df['ROA'] = analysis_df['당기순이익']/analysis_df['총자산']
