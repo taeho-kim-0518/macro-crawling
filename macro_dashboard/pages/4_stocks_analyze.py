@@ -64,7 +64,7 @@ if st.button('분석하기'):
 
                 # 재무상태표 데이터
                 analysis_df['총자산'] = balance_sheet.loc['Total Assets'].fillna(0).astype(int)
-                analysis_df['유형자산'] = balance_sheet.loc['Current Assets'].fillna(0).astype(int)
+                analysis_df['유동자산'] = balance_sheet.loc['Current Assets'].fillna(0).astype(int)
                 equity_keys = ["Stockholders' Equity", "Total Stockholder Equity", "Common Stock Equity", "Total Equity"]
                 analysis_df['총자본'] = get_clean_financial_data(balance_sheet, equity_keys).fillna(0).astype(int)
                 analysis_df['총부채'] = analysis_df['총자산'] - analysis_df['총자본']
