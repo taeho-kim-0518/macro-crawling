@@ -156,10 +156,10 @@ if st.button('분석하기'):
                     st.write('*(Forward PER은 미래 예측값으로, 지난 5년간의 표에 포함되지 않습니다.)*')
 
                 # PEG 가져오기
-                if forward_per is not None:
+                if peg_ratio is not None:
                     st.write(f'---')
-                    st.write(f'**현재 Forward PER:** {forward_per:.2f}')
-                    st.write('*(Forward PER은 미래 예측값으로, 지난 5년간의 표에 포함되지 않습니다.)*')
+                    st.write(f'**현재 PEG:** {peg_ratio:.2f}')
+                    st.write('*(PEG는 미래 예측값으로, 지난 5년간의 표에 포함되지 않습니다.)*')
 
         except Exception as e:
             st.error(f'데이터를 가져오거나 처리하는 중 오류가 발생했습니다: {e}')
