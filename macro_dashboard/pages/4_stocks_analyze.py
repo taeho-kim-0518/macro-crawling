@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 
 
+
+
 # 데이터를 안전하게 가져와 숫자로 변환하는 함수 (여러 키를 지원하도록 개선)
 def get_clean_financial_data(df, keys):
     '''
@@ -27,6 +29,14 @@ def get_clean_financial_data(df, keys):
 
 # 사용자로부터 티커 입력 받기
 ticker_symbol = st.text_input('티커 입력 (예: AAPL)', 'AAPL')
+
+ticker_data = yf.Ticker(ticker_symbol)
+current_price = ticker_data.info.get('currentPrice')
+forward_per = ticker_data.info.get('forwardPE')
+peg_ratio = ticker_data.info.get('pegRatio')
+
+analysis_df = pd.DataFrame()
+
 
 # 버튼 클릭 시 분석 실행
 if st.button('분석하기'):
