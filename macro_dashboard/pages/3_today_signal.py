@@ -45,7 +45,7 @@ else:
 
 st.subheader("컨텍스트(오늘 신호가 없으면 최근 발표분)")
 st.dataframe(res["details"], use_container_width=True)
-
+st.caption("임계치: z-score : -1.2 미만 + 전월 대비 상승률이 0% 초과일 때 매수 / 전월 대비 하락률이 7% 초과일 때 매도")
 nr = res.get("next_release")
 if nr:
     st.caption(f"다음 발표: {nr['release_date'].date()} → 주문일: {nr['effective_date'].date()} (예정)")
@@ -74,6 +74,8 @@ col1, col2, col3 = st.columns(3)
 col1.metric("시그널", pcr['signal'][0])
 col2.metric("최근 데이터 수집일", pcr['date'][0].strftime('%Y-%m-%d'))
 col3.metric("최근 Put-Call Ratio", f"{pcr['equity_value'][0]:.2f}")
+
+st.caption("임계치: 1.5 초과이면 매수 / 0.4 미만이면 매도")
 
 #--------------
 
@@ -152,6 +154,8 @@ with col3:
     st.markdown("**설명**")
     st.write(ma_disparity['comment_50'][0]) # st.write는 글자를 잘라내지 않습니다.
 
+st.caption("임계치 : 30% 미만: 매수 / 70% 이상: 매도")
+
 # 200일선
 col1, col2, col3 = st.columns(3)
 
@@ -164,6 +168,8 @@ with col2:
 with col3:
     st.markdown("**설명**")
     st.write(ma_disparity['comment_200'][0]) # st.write는 글자를 잘라내지 않습니다.
+
+st.caption("임계치 : 30% 미만: 매수 / 70% 이상: 매도")
 
 #--------------
 st.subheader("미국선행경기지수 + PMI")

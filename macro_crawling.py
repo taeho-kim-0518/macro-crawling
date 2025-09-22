@@ -1481,7 +1481,7 @@ class MacroCrawler:
         # 컬럼 유연 처리
         if "date" not in lei.columns:
             raise ValueError("lei_data.csv에는 'date' 컬럼이 필요합니다.")
-        lei["date"] = pd.to_datetime(lei["date"])
+        lei["date"] = pd.to_datetime(lei["date"], format="mixed")
         if "LEI" not in lei.columns:
             # 일반적으로 'value'로 들어옴
             if "value" in lei.columns:
@@ -3411,12 +3411,12 @@ class MacroCrawler:
 if __name__ == "__main__":
     crawler = MacroCrawler()
 
-    md_data = crawler.update_margin_debt_data()
-    pmi_data = crawler.update_ism_pmi_data()
-    fp_data = crawler.update_snp_forwardpe_data()
-    pc_data = crawler.update_putcall_ratio()
-    bb_data = crawler.update_bull_bear_spread()
-    lei_data = crawler.update_lei_data()
+    # md_data = crawler.update_margin_debt_data()
+    # pmi_data = crawler.update_ism_pmi_data()
+    # fp_data = crawler.update_snp_forwardpe_data()
+    # pc_data = crawler.update_putcall_ratio()
+    # bb_data = crawler.update_bull_bear_spread()
+    # lei_data = crawler.update_lei_data()
 
-    data = crawler.decide_today_lei_signal_min()
+    data = crawler.plot_sp500_with_lei_signals()
     print(data)
