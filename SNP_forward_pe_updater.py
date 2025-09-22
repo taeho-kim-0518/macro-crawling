@@ -32,7 +32,7 @@ class forwardpe_updater:
 
             options = Options()
             # GitHub Actions 환경에서는 headless 모드를 반드시 활성화해야 합니다.
-            # options.add_argument("--headless")
+            options.add_argument("--headless")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-gpu")
  
