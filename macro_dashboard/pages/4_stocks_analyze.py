@@ -95,7 +95,7 @@ if st.button('분석하기'):
                     # PER 계산
                     current_price = info.get('currentPrice')
                     latest_eps = analysis_df['주당순이익'].iloc[0]
-                    analysis_df['PER'] = np.where(latest_eps != 0, current_price / latest_eps, np.nan)
+                    calculated_per = current_price / latest_eps if latest_eps != 0 else np.nan
                     
                     # 결과 출력
                     st.subheader(f'"{ticker_symbol}" 지난 5년 재무 지표 분석')
@@ -107,8 +107,7 @@ if st.button('분석하기'):
                         'ROA': '{:.2%}',
                         'ROE': '{:.2%}',
                         '순유형자산수익률': '{:.2f}',
-                        '부채비율': '{:.2f}',
-                        'PER': '{:.2f}'
+                        '부채비율': '{:.2f}'
                     }))
                     
                     # 주요 지표 요약
@@ -118,6 +117,7 @@ if st.button('분석하기'):
                     peg_ratio = info.get('trailingPegRatio')
                     
                     st.metric("현재 주가", f"${current_price:,.2f}")
+                    st.metric("PER (Trailing)", f"{calculated_per:.2f}" if not np.isnan(calculated_per) else "데이터 없음")
                     st.metric("Forward PER", f"{forward_per:.2f}" if forward_per is not None else "데이터 없음")
                     st.metric("PEG Ratio", f"{peg_ratio:.2f}" if peg_ratio is not None else "데이터 없음")
 
