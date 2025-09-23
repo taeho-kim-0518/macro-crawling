@@ -14,6 +14,11 @@ jobs:
   update-csv:
     # 이 작업이 실행될 운영체제 환경을 지정합니다.
     runs-on: ubuntu-latest
+
+    # ⚠️ 중요: 이 부분을 추가하여 워크플로우에 쓰기 권한을 부여합니다.
+    # 커밋 및 푸시가 가능하게 됩니다.
+    permissions:
+      contents: write
     
     # 이 작업에서 순차적으로 실행될 스텝(steps)을 정의합니다.
     steps:
