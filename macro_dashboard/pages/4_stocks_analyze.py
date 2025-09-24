@@ -195,6 +195,7 @@ if st.button('분석하기'):
                 analysis_df.loc['ROE'] = np.where(analysis_df.loc['총자본'] != 0, analysis_df.loc['당기순이익'] / analysis_df.loc['총자본'], 0)
                 analysis_df.loc['순유형자산수익률'] = np.where(analysis_df.loc['순유형자산'] != 0, analysis_df.loc['당기순이익'] / analysis_df.loc['순유형자산'], 0)
                 analysis_df.loc['부채비율'] = np.where(analysis_df.loc['총자본'] != 0, analysis_df.loc['총부채'] / analysis_df.loc['총자본'], 0)
+                analysis_df.loc['영업이익률'] = np.where(analysis_df.loc['매출액'] != 0, analysis_df.loc['영업이익']/analysis_df.loc['매출액'], 0)
 
                 # --- 추가된 로직: 열 순서 재정렬 ---
                 # 'TTM' 열을 제외한 연도 열들을 날짜 순으로 정렬
@@ -208,7 +209,7 @@ if st.button('분석하기'):
                 # --- 추가된 로직: 행 순서 재정렬 ---
                 final_row_order = [
                     '매출액', '매출총이익', '영업이익', '당기순이익', '주당순이익', '총자산', '유동자산', '총자본',
-                    '총부채', '순유동자산', '순유형자산', 'ROA', 'ROE', '순유형자산수익률', '부채비율',
+                    '총부채', '순유동자산', '순유형자산', 'ROA', 'ROE', '순유형자산수익률', '영업이익률', '부채비율', 
                     '영업현금흐름', '투자현금흐름', '재무현금흐름', '자본적 지출', '잉여현금흐름',
                     '자사주매입', '유상증자'
                 ]
@@ -238,8 +239,8 @@ if st.button('분석하기'):
                                     '투자현금흐름', '재무현금흐름', '자본적 지출', '잉여현금흐름',
                                     '자사주매입', '유상증자']
                     
-                    decimal_formats = ['주당순이익', '순유형자산수익률', '부채비율']
-                    percentage_formats = ['ROA', 'ROE']
+                    decimal_formats = ['주당순이익']
+                    percentage_formats = ['ROA', 'ROE', '순유형자산수익률', '영업이익률', '부채비율']
 
                     if row_name in percentage_formats:
                         return row.map(lambda v: f"{v:.2%}" if pd.notna(v) else "")
