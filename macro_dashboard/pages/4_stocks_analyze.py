@@ -287,7 +287,7 @@ if st.button('분석하기'):
                 st.metric("PER (Trailing)", f"{per_ratio:.2f}" if per_ratio is not None else "데이터 없음")
                 st.metric("Forward PER", f"{forward_per:.2f}" if forward_per is not None else "데이터 없음")
                 st.metric("PEG Ratio", f"{peg_ratio:.2f}" if peg_ratio is not None else "데이터 없음")
-                st.metric("Dividend Yield", f"{dividend_yield:.2f}" if dividend_yield is not None else "데이터 없음")
+                st.metric("Dividend Yield", f"{dividend_yield:.2%}" if dividend_yield is not None else "데이터 없음")
                 st.metric("Market Cap", f"{market_cap:,.0f}" if market_cap is not None else "데이터 없음")
 
                 # 주식 매수, 매도 평가
