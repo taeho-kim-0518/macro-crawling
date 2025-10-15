@@ -154,7 +154,7 @@ with col3:
     st.markdown("**설명**")
     st.write(ma_disparity['comment_50'][0]) # st.write는 글자를 잘라내지 않습니다.
 
-st.caption("임계치 : 30% 미만: 매수 / 70% 이상: 매도")
+st.caption("임계치 : -10% 미만: 매수 / 20% 이상: 매도")
 
 # 200일선
 col1, col2, col3 = st.columns(3)
@@ -169,7 +169,7 @@ with col3:
     st.markdown("**설명**")
     st.write(ma_disparity['comment_200'][0]) # st.write는 글자를 잘라내지 않습니다.
 
-st.caption("임계치 : 30% 미만: 매수 / 70% 이상: 매도")
+st.caption("임계치 : -10% 미만: 매수 / 20% 이상: 매도")
 
 #--------------
 st.subheader("미국선행경기지수 + PMI")
