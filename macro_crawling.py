@@ -390,16 +390,18 @@ class MacroCrawler:
         # 멀티인덱스 컬럼 --> 단일 컬럼으로 변환
         df.columns = [col[0] if isinstance(col,tuple) else col for col in df.columns]
 
-        # 컬럼명 정리
-        df = df.rename(columns={'Date': 'date', 'Close': 'sp500_close'})
+        # # 컬럼명 정리
+        # df = df.rename(columns={'Date': 'date', 'Close': 'sp500_close'})
         
-        # 월 단위로 맞춰주기 (Period → Timestamp)
-        df['date'] = pd.to_datetime(df['date']) #dt.to_period('M').dt.to_timestamp()
+        # # 월 단위로 맞춰주기 (Period → Timestamp)
+        # df['date'] = pd.to_datetime(df['date']) #dt.to_period('M').dt.to_timestamp()
 
         # 필요한 컬럼만 반환
-        df = df[['date', 'sp500_close']]
+        # df = df[['date', 'sp500_close']]
+        print(df)
 
         return df
+
     
     # Clear
     def merge_m2_margin_sp500_abs(self):
@@ -3418,5 +3420,5 @@ if __name__ == "__main__":
     # bb_data = crawler.update_bull_bear_spread()
     # lei_data = crawler.update_lei_data()
 
-    data = crawler.generate_bull_bear_signals()
-    print(data)
+    data = crawler.get_sp500()
+

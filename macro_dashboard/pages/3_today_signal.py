@@ -110,6 +110,8 @@ with col4:
     st.markdown("**설명**")
     st.write(ma_above['comment_50'][0]) # st.write는 글자를 잘라내지 않습니다.
 
+st.caption("임계치 : 30% 이하: 매수 / 70% 이상: 매도")
+
 st.markdown("---") # 시각적 구분선 추가
 
 # 200일 이평선
@@ -126,6 +128,8 @@ with col7:
 with col8:
     st.markdown("**설명**")
     st.write(ma_above['comment_200'][0]) # st.write는 글자를 잘라내지 않습니다.
+
+st.caption("임계치 : 30% 이하: 매수 / 70% 이상: 매도")
 
 #--------------
 st.subheader("이평선 이격도 분석")
