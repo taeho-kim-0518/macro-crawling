@@ -405,7 +405,7 @@ class MacroCrawler:
         return df
 
     
-    # Clear
+    # Clear + 디버깅 코드 삭제
     def merge_m2_margin_sp500_abs(self):
         '''
         M2, margin_debt, S&P500 지수 데이터프레임 병합
@@ -417,9 +417,8 @@ class MacroCrawler:
 
         df_margin = self.get_margin_yoy_change().copy()
         df_margin['date'] = df_margin['Month/Year'].dt.to_period('M').dt.to_timestamp()
-    
+
         df_sp500 = self.get_sp500().copy()
-        st.write("sp500 데이터 컬럼 : ", df_sp500.columns.to_list())
         df_sp500['date'] = pd.to_datetime(df_sp500['date'])  # 혹시 모르니 안전하게
         df_sp500['month'] =  df_sp500['date'].dt.to_period('M').dt.to_timestamp()
 
