@@ -410,7 +410,6 @@ class MacroCrawler:
         '''
         M2, margin_debt, S&P500 지수 데이터프레임 병합
         '''
-        st.write("✅ merge_m2_margin_sp500_abs() 호출됨")
 
         df_m2 = self.get_m2().copy()
         df_m2['date'] = df_m2['date'].dt.to_period('M').dt.to_timestamp()
@@ -418,13 +417,9 @@ class MacroCrawler:
 
         df_margin = self.get_margin_yoy_change().copy()
         df_margin['date'] = df_margin['Month/Year'].dt.to_period('M').dt.to_timestamp()
-        #df_margin["margin_debt"] = df_margin["Debit Balances in Customers' Securities Margin Accounts"]
-        #df_margin["margin_debt"] = df_margin["margin_debt"].str.replace(',','').astype(int)
+        print(("df_margin 컬럼:", df_margin.columns.tolist()))
 
         df_sp500 = self.get_sp500().copy()
-        st.write("📊 get_sp500() 결과 컬럼:", df_sp500.columns.tolist())
-        st.write("📈 데이터 예시:", df_sp500.head(3))
-
         df_sp500['date'] = pd.to_datetime(df_sp500['date'])  # 혹시 모르니 안전하게
         df_sp500['month'] =  df_sp500['date'].dt.to_period('M').dt.to_timestamp()
 
@@ -3427,6 +3422,6 @@ if __name__ == "__main__":
     # bb_data = crawler.update_bull_bear_spread()
     # lei_data = crawler.update_lei_data()
 
-    data = crawler.get_today_signal_with_m2_and_margin_debt()
+    data = crawler.merge_m2_margin_sp500_abs()
     print(data)
 
