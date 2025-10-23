@@ -383,56 +383,26 @@ class MacroCrawler:
         '''
         S&P500 지수 조회
         '''
-
+  
         ticker = '^GSPC'
-        df = yf.download(ticker, start='2000-01-01', interval="1d", progress=False)
+        df = yf.download(ticker, start='2000-01-01', interval="1d", progress=False )
+        # 인덱스를 컬럼으로 변환
+        df = df.reset_index()
 
-        # 인덱스가 날짜인 경우 reset_index 필요
-        if not isinstance(df.index, pd.RangeIndex):
-            df = df.reset_index()
+        # 멀티인덱스 컬럼 --> 단일 컬럼으로 변환
+        df.columns = [col[0] if isinstance(col,tuple) else col for col in df.columns]
 
-        # Date 컬럼 이름 처리 (환경마다 다름)
-        possible_date_cols = ['Date', 'Datetime', 'date']
-        for col in possible_date_cols:
-            if col in df.columns:
-                df = df.rename(columns={col: 'date'})
-                break
+        # 컬럼명 정리
+        df = df.rename(columns={'Date': 'date', 'Close': 'sp500_close'})
+        
+        # 월 단위로 맞춰주기 (Period → Timestamp)
+        df['date'] = pd.to_datetime(df['date']) #dt.to_period('M').dt.to_timestamp()
 
-        # Close 컬럼 이름 처리
-        if 'Close' in df.columns:
-            df = df.rename(columns={'Close': 'sp500_close'})
-        elif ('Close', ticker) in df.columns:
-            df = df.rename(columns={('Close', ticker): 'sp500_close'})
-
-        # 멀티인덱스 컬럼 방어코드
-        df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
-
-        # date 컬럼 타입 변환
-        df['date'] = pd.to_datetime(df['date'], errors='coerce')
-
-        # 필요한 컬럼만 남기기
-        df = df[['date', 'sp500_close']].dropna(subset=['date', 'sp500_close'])
+        # 필요한 컬럼만 반환
+        df = df[['date', 'sp500_close']]
+        
 
         return df
-        # ticker = '^GSPC'
-        # df = yf.download(ticker, start='2000-01-01', interval="1d", progress=False )
-        # # 인덱스를 컬럼으로 변환
-        # df = df.reset_index()
-
-        # # 멀티인덱스 컬럼 --> 단일 컬럼으로 변환
-        # df.columns = [col[0] if isinstance(col,tuple) else col for col in df.columns]
-
-        # # 컬럼명 정리
-        # df = df.rename(columns={'Date': 'date', 'Close': 'sp500_close'})
-        
-        # # 월 단위로 맞춰주기 (Period → Timestamp)
-        # df['date'] = pd.to_datetime(df['date']) #dt.to_period('M').dt.to_timestamp()
-
-        # # 필요한 컬럼만 반환
-        # df = df[['date', 'sp500_close']]
-        
-
-        # return df
 
     
     # Clear
