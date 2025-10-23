@@ -408,6 +408,7 @@ class MacroCrawler:
         '''
         M2, margin_debt, S&P500 지수 데이터프레임 병합
         '''
+        
         df_m2 = self.get_m2().copy()
         df_m2['date'] = df_m2['date'].dt.to_period('M').dt.to_timestamp()
         df_m2 = df_m2.rename(columns={'value' : 'm2'})
@@ -418,6 +419,7 @@ class MacroCrawler:
         #df_margin["margin_debt"] = df_margin["margin_debt"].str.replace(',','').astype(int)
 
         df_sp500 = self.get_sp500().copy()
+        print("df_sp500.columns:", df_sp500.columns.tolist()) # 디버깅 코드
         df_sp500['date'] = pd.to_datetime(df_sp500['date'])  # 혹시 모르니 안전하게
         df_sp500['month'] =  df_sp500['date'].dt.to_period('M').dt.to_timestamp()
 
@@ -3420,6 +3422,6 @@ if __name__ == "__main__":
     # bb_data = crawler.update_bull_bear_spread()
     # lei_data = crawler.update_lei_data()
 
-    data = crawler.get_sp500()
+    data = crawler.merge_m2_margin_sp500_abs()
     print(data)
 
