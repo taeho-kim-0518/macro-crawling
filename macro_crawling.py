@@ -417,7 +417,8 @@ class MacroCrawler:
 
         df_margin = self.get_margin_yoy_change().copy()
         df_margin['date'] = df_margin['Month/Year'].dt.to_period('M').dt.to_timestamp()
-        print(("df_margin 컬럼:", df_margin.columns.tolist()))
+        # df_margin["margin_debt"] = df_margin["Debit Balances in Customers' Securities Margin Accounts"]
+        # df_margin["margin_debt"] = df_margin["margin_debt"].str.replace(',','').astype(int)
 
         df_sp500 = self.get_sp500().copy()
         df_sp500['date'] = pd.to_datetime(df_sp500['date'])  # 혹시 모르니 안전하게
