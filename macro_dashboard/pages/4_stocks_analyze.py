@@ -272,6 +272,24 @@ if st.button('분석하기'):
                 # }))
 
                 #st.dataframe(analysis_df.style.format(format_dict))
+
+            # --- 기술적 분석: 50일선 / 200일선 이격도 ---
+            if not historical_data.empty:
+                historical_data['MA50'] = historical_data['Close'].rolling(window=50).mean()
+                historical_data['MA200'] = historical_data['Close'].rolling(window=200).mean()
+                
+                latest_close = historical_data['Close'].iloc[-1]
+                latest_ma50 = historical_data['MA50'].iloc[-1]
+                latest_ma200 = historical_data['MA200'].iloc[-1]
+                
+                disparity_50 = (latest_close / latest_ma50 - 1) * 100 if latest_ma50 != 0 else np.nan
+                disparity_200 = (latest_close / latest_ma200 - 1) * 100 if latest_ma200 != 0 else np.nan
+
+                st.subheader("기술적 분석 (이동평균선)")
+                st.metric("50일선 이격도", f"{disparity_50:.2f}%" if not np.isnan(disparity_50) else "데이터 없음")
+                st.metric("200일선 이격도", f"{disparity_200:.2f}%" if not np.isnan(disparity_200) else "데이터 없음")
+                
+                st.line_chart(historical_data[['Close', 'MA50', 'MA200']])    
                 
                 # 주요 지표 요약
                 st.subheader('주요 투자 지표')
