@@ -1706,7 +1706,7 @@ class MacroCrawler:
 
         # --- 발표 시차(매월 25일 규칙) 반영: 오늘 날짜 기준 동적 lag 계산
         now_us = pd.Timestamp.now(tz=market_tz)  # 미국장 기준 오늘
-        effective_lag = 2 if now_us.day < 25 else 1
+        effective_lag = 2 if now_us.day < 30 else 1
 
 
         df["FEDFUNDS_6M_chg"] = df["FEDFUNDS"] - df["FEDFUNDS"].shift(6)
@@ -3421,6 +3421,6 @@ if __name__ == "__main__":
     # bb_data = crawler.update_bull_bear_spread()
     # lei_data = crawler.update_lei_data()
 
-    data = crawler.merge_m2_margin_sp500_abs()
+    data = crawler.decide_today_lei_signal_min()
     print(data)
 
