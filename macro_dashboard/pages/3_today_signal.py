@@ -50,6 +50,31 @@ nr = res.get("next_release")
 if nr:
     st.caption(f"다음 발표: {nr['release_date'].date()} → 주문일: {nr['effective_date'].date()} (예정)")
 
+# -------------
+st.subheader("오늘의 VIX 시그널")
+
+df_vix = crawler.get_vix_index()
+df_vix = df_vix.sort_values('date')
+latest = df_vix.iloc[-1]
+
+date = latest['date']
+vix = float(latest['vix_index'])  # ← 여기서 float 변환
+
+result = [f"📅 기준일: {date}",
+        f"📊 VIX 지수 (S&P 500 변동성): {vix:.2f}"]
+
+if vix < 12:
+    result.append("📉 과도한 낙관 상태 → 저변동성 환경 (고점 경계 가능성)")
+elif vix < 20:
+    result.append("🟢 시장이 안정적인 상태 (낙관적 심리)")
+elif vix < 30:
+    result.append("⚠️ 시장 불확실성 증가 → 투자자 주의 필요")
+elif vix <40:
+    result.append("🟠 시장 위험 상태 → 과매도/저점 반등 가능성 (역발상 매수 고려 구간)")
+else:
+    result.append("🔴 시장 극단적 불안 상태 → 과매도/저점 반등 가능성 (역발상 매수 고려 구간) ")
+
+st.write("\n".join(result))
 #--------------
 
 st.subheader("오늘의 Bull-Bear 스프레드 시그널")

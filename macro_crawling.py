@@ -2363,7 +2363,7 @@ class MacroCrawler:
         latest = df_vix.iloc[-1]
 
         date = latest['date']
-        vix = float(latest['vix'])  # ← 여기서 float 변환
+        vix = float(latest['vix_index'])  # ← 여기서 float 변환
 
         result = [f"📅 기준일: {date}",
                 f"📊 VIX 지수 (S&P 500 변동성): {vix:.2f}"]
@@ -3421,6 +3421,6 @@ if __name__ == "__main__":
     # bb_data = crawler.update_bull_bear_spread()
     # lei_data = crawler.update_lei_data()
 
-    data = crawler.decide_today_lei_signal_min()
+    data = crawler.analyze_vix()
     print(data)
 
