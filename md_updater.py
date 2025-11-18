@@ -160,6 +160,8 @@ class MarginDebtUpdater :
         return self.df
 
 # 문자열 날짜 바꿀 때 사용
-# if __name__ == "__main__":
+if __name__ == "__main__":
 #     fix_md_csv_format("md_df.csv")
+    update = MarginDebtUpdater()
 
+    result = update.update_csv()
